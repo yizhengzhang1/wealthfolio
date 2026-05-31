@@ -197,4 +197,40 @@ describe("two-leg: vertical / calendar / diagonal", () => {
   });
 });
 
+describe("two-leg: straddle / strangle", () => {
+  it("long straddle: call + put, same strike, same expiry, both long", () => {
+    const c = makeHolding({ id: "c", symbol: call(100, EXP_A), quantity: 1 });
+    const p = makeHolding({ id: "p", symbol: put(100, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([c, p], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies[0].strategyType).toBe("straddle");
+    expect(strategies[0].name).toBe("Straddle");
+  });
+
+  it("short strangle: call + put, different strike, same expiry, both short", () => {
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1 });
+    const p = makeHolding({ id: "p", symbol: put(90, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([c, p], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("strangle");
+    expect(strategies[0].name).toBe("Strangle");
+  });
+
+  it("call + put same strike but opposite sides is NOT a straddle (-> diagonal/loose)", () => {
+    // long call + short put, same strike same expiry: not same-side -> not straddle.
+    const c = makeHolding({ id: "c", symbol: call(100, EXP_A), quantity: 1 });
+    const p = makeHolding({ id: "p", symbol: put(100, EXP_A), quantity: -1 });
+    const { strategies, looseLegs } = detectStrategies([c, p], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+
+  it("call + put different expiry is not a strangle (-> loose)", () => {
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: 1 });
+    const p = makeHolding({ id: "p", symbol: put(90, EXP_B), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([c, p], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

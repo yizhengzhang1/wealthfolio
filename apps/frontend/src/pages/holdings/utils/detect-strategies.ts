@@ -156,6 +156,25 @@ function classifyVerticalFamily(
   return null; // same strike & same expiry of same type & opposite sides => degenerate, skip
 }
 
+function bothSameSide(a: LegFeature, b: LegFeature): boolean {
+  return (a.isLong && b.isLong) || (a.isShort && b.isShort);
+}
+
+/** Try call+put same-side pair -> straddle / strangle. */
+function classifyStraddleFamily(
+  a: LegFeature,
+  b: LegFeature,
+): { type: StrategyType; name: string } | null {
+  if (!a.isOption || !b.isOption) return null;
+  if (a.occ!.optionType === b.occ!.optionType) return null; // need one call + one put
+  if (!bothSameSide(a, b)) return null;
+  if (a.occ!.expiration !== b.occ!.expiration) return null; // both straddle & strangle need same expiry
+  const sameStrike = a.occ!.strikePrice === b.occ!.strikePrice;
+  return sameStrike
+    ? { type: "straddle", name: defaultStrategyLabel("straddle") }
+    : { type: "strangle", name: defaultStrategyLabel("strangle") };
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
@@ -173,7 +192,7 @@ export function detectStrategies(
     if (consumed.has(pool[i])) continue;
     for (let j = i + 1; j < pool.length; j++) {
       if (consumed.has(pool[j])) continue;
-      const hit = classifyVerticalFamily(pool[i], pool[j]);
+      const hit = classifyVerticalFamily(pool[i], pool[j]) ?? classifyStraddleFamily(pool[i], pool[j]);
       if (hit) {
         consumed.add(pool[i]);
         consumed.add(pool[j]);
