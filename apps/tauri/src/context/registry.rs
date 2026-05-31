@@ -68,6 +68,7 @@ pub struct ServiceContext {
     pub device_sync_runtime: Arc<DeviceSyncRuntimeState>,
     pub health_service: Arc<health::HealthService>,
     pub custom_provider_service: Arc<wealthfolio_core::custom_provider::CustomProviderService>,
+    pub option_strategy_service: Arc<wealthfolio_core::option_strategy::OptionStrategyService>,
     pub portfolio_service: Arc<dyn portfolios::PortfolioServiceTrait>,
     pub spending_settings_service: Arc<SpendingSettingsService>,
     pub cash_activity_service: Arc<CashActivityService>,

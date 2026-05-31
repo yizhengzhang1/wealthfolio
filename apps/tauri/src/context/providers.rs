@@ -208,6 +208,19 @@ pub async fn initialize_context(
         ),
     );
 
+    // Option strategy override service
+    let option_strategy_repository = Arc::new(
+        wealthfolio_storage_sqlite::option_strategy::OptionStrategySqliteRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let option_strategy_service = Arc::new(
+        wealthfolio_core::option_strategy::OptionStrategyService::new(
+            option_strategy_repository.clone(),
+        ),
+    );
+
     // Create taxonomy service before asset service (needed for auto-classification)
     let taxonomy_repository = Arc::new(TaxonomyRepository::new(pool.clone(), writer.clone()));
     let taxonomy_service = Arc::new(TaxonomyService::new(taxonomy_repository));
@@ -574,6 +587,7 @@ pub async fn initialize_context(
             device_sync_runtime,
             health_service,
             custom_provider_service,
+            option_strategy_service,
             portfolio_service,
             spending_settings_service,
             cash_activity_service,
