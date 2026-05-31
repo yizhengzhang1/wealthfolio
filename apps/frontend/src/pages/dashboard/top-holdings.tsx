@@ -114,6 +114,7 @@ interface GroupHoldingRowProps {
   isHidden?: boolean;
   showTotalReturn: boolean;
   showName: boolean;
+  expanded: boolean;
   onClick?: () => void;
 }
 
@@ -123,6 +124,7 @@ function GroupHoldingRow({
   isHidden,
   showTotalReturn,
   showName,
+  expanded,
   onClick,
 }: GroupHoldingRowProps) {
   const title = showName ? (group.underlyingName ?? group.underlyingSymbol) : group.underlyingSymbol;
@@ -140,6 +142,12 @@ function GroupHoldingRow({
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Icons.ChevronRight
+          className={cn(
+            "text-muted-foreground h-4 w-4 shrink-0 transition-transform",
+            expanded && "rotate-90",
+          )}
+        />
         <TickerAvatar symbol={group.underlyingSymbol} className="size-9 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold">{title}</span>
@@ -280,6 +288,14 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     "dashboard-holdings-widget-group-by-underlying",
     true,
   );
+  const [expandedKeys, setExpandedKeys] = usePersistentState<string[]>(
+    "dashboard-holdings-widget-expanded",
+    [],
+  );
+  const toggleExpand = (key: string) =>
+    setExpandedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
 
   // Filter out cash holdings and alternative assets, optionally group same-underlying
   // positions into one summary row, then sort by market value or gain.
@@ -461,16 +477,36 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     >
       {topHoldings.map((item) => {
         if (isHoldingGroupRow(item)) {
+          const expanded = expandedKeys.includes(item.underlyingKey);
           return (
-            <GroupHoldingRow
-              key={item.id}
-              group={item}
-              baseCurrency={baseCurrency}
-              isHidden={isBalanceHidden}
-              showTotalReturn={showTotalReturn}
-              showName={displayMode === "name"}
-              onClick={() => navigate("/holdings")}
-            />
+            <div key={item.id}>
+              <GroupHoldingRow
+                group={item}
+                baseCurrency={baseCurrency}
+                isHidden={isBalanceHidden}
+                showTotalReturn={showTotalReturn}
+                showName={displayMode === "name"}
+                expanded={expanded}
+                onClick={() => toggleExpand(item.underlyingKey)}
+              />
+              {expanded && (
+                <div className="border-border ml-3 border-l pl-3">
+                  {item.subRows.map((leg) => (
+                    <HoldingRow
+                      key={leg.id}
+                      holding={leg}
+                      baseCurrency={baseCurrency}
+                      isHidden={isBalanceHidden}
+                      showTotalReturn={showTotalReturn}
+                      showName={displayMode === "name"}
+                      onClick={() =>
+                        navigate(`/holdings/${encodeURIComponent(leg.instrument?.id ?? leg.id)}`)
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           );
         }
         const assetId = item.instrument?.id ?? item.id;

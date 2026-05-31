@@ -1,5 +1,6 @@
 import type { Holding } from "@/lib/types";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { TopHoldings } from "./top-holdings";
@@ -50,6 +51,14 @@ describe("TopHoldings grouping", () => {
     window.localStorage.setItem("dashboard-holdings-widget-group-by-underlying", "false");
     renderWidget([ASTS_C, ASTS_P]);
     expect(screen.queryByText(/2 positions/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/CALL/)).toBeInTheDocument();
+    expect(screen.getByText(/PUT/)).toBeInTheDocument();
+  });
+  it("expands a group in place on click to reveal legs", async () => {
+    const user = userEvent.setup();
+    renderWidget([ASTS_C, ASTS_P]);
+    expect(screen.queryByText(/CALL/)).not.toBeInTheDocument();
+    await user.click(screen.getByText(/2 positions/i));
     expect(screen.getByText(/CALL/)).toBeInTheDocument();
     expect(screen.getByText(/PUT/)).toBeInTheDocument();
   });
