@@ -1,0 +1,19 @@
+{
+  "currency": "USD",
+  "net_liquidation": 12345.67,
+  "equity_with_loan_value": 15000,
+  "buying_power": 20000,
+  "gross_position_value": 5000,
+  "total_cash_value": 14000,
+  "available_funds": 5000,
+  "initial_margin": 9000,
+  "maintenance_margin": 8000,
+  "excess_liquidity": 6000,
+  "dividends": 0.5,
+  "day_trades_remaining": "3",
+  "day_trades_remaining_t1": "3",
+  "day_trades_remaining_t2": "3",
+  "day_trades_remaining_t3": "3",
+  "day_trades_remaining_t4": "3",
+  "leverage": "0.30"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@wealthfolio-tools/ibkr-sync",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Hourly IBKR -> Wealthfolio sync. Runs inside a Claude Code session so it can use the IBKR MCP binding.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "sync": "tsx src/sync.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  }
+}

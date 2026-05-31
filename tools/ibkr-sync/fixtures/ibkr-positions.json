@@ -1,0 +1,54 @@
+{
+  "positions": [
+    {
+      "contract_id": 1001,
+      "contract_description": "ACME",
+      "position": 6.2,
+      "market_price": 100,
+      "market_value": 620,
+      "currency": "USD",
+      "average_price": 90,
+      "unrealized_pnl": 62
+    },
+    {
+      "contract_id": 1002,
+      "contract_description": "ACME   JUL2026 140 C [ACME  260702C00140000 100]",
+      "position": 1,
+      "market_price": 8,
+      "market_value": 800,
+      "currency": "USD",
+      "average_price": 7,
+      "unrealized_pnl": 100
+    },
+    {
+      "contract_id": 1003,
+      "contract_description": "ACME   JUL2026 70 P [ACME  260702P00070000 100]",
+      "position": -2,
+      "market_price": 1.5,
+      "market_value": -300,
+      "currency": "USD",
+      "average_price": 1.7,
+      "unrealized_pnl": 40
+    },
+    {
+      "contract_id": 1004,
+      "contract_description": "ZZZ    JAN2027 20 C [ZZZ   270115C00020000 100]",
+      "position": -2,
+      "market_price": 24,
+      "market_value": -4800,
+      "currency": "USD",
+      "average_price": 23,
+      "unrealized_pnl": -200
+    },
+    {
+      "contract_id": 1005,
+      "contract_description": "ACME   MAY2026 120 C [ACME  260529C00120000 100]",
+      "position": 0,
+      "market_price": 0,
+      "market_value": 0,
+      "currency": "USD",
+      "average_price": 0,
+      "unrealized_pnl": 0
+    }
+  ]
+}
