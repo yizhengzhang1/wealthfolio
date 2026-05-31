@@ -338,4 +338,49 @@ describe("three-leg: butterfly", () => {
   });
 });
 
+describe("four-leg: iron-condor / iron-butterfly", () => {
+  it("iron condor: long put 80, short put 90, short call 110, long call 120, all same expiry", () => {
+    const lp = makeHolding({ id: "lp", symbol: put(80, EXP_A), quantity: 1 });
+    const sp = makeHolding({ id: "sp", symbol: put(90, EXP_A), quantity: -1 });
+    const sc = makeHolding({ id: "sc", symbol: call(110, EXP_A), quantity: -1 });
+    const lc = makeHolding({ id: "lc", symbol: call(120, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([lp, sp, sc, lc], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("iron-condor");
+    expect(strategies[0].name).toBe("Iron Condor");
+    expect(strategies[0].memberCount).toBe(4);
+  });
+
+  it("iron butterfly: short put and short call share middle strike 100", () => {
+    const lp = makeHolding({ id: "lp", symbol: put(90, EXP_A), quantity: 1 });
+    const sp = makeHolding({ id: "sp", symbol: put(100, EXP_A), quantity: -1 });
+    const sc = makeHolding({ id: "sc", symbol: call(100, EXP_A), quantity: -1 });
+    const lc = makeHolding({ id: "lc", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([lp, sp, sc, lc], NO_OVERRIDES);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("iron-butterfly");
+    expect(strategies[0].name).toBe("Iron Butterfly");
+  });
+
+  it("iron condor takes priority over its inner verticals", () => {
+    const lp = makeHolding({ id: "lp", symbol: put(80, EXP_A), quantity: 1 });
+    const sp = makeHolding({ id: "sp", symbol: put(90, EXP_A), quantity: -1 });
+    const sc = makeHolding({ id: "sc", symbol: call(110, EXP_A), quantity: -1 });
+    const lc = makeHolding({ id: "lc", symbol: call(120, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([lc, sp, lp, sc], NO_OVERRIDES);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("iron-condor");
+  });
+
+  it("put strikes overlapping call strikes is not an iron condor", () => {
+    const lp = makeHolding({ id: "lp", symbol: put(80, EXP_A), quantity: 1 });
+    const sp = makeHolding({ id: "sp", symbol: put(115, EXP_A), quantity: -1 }); // > a call strike
+    const sc = makeHolding({ id: "sc", symbol: call(110, EXP_A), quantity: -1 });
+    const lc = makeHolding({ id: "lc", symbol: call(120, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([lp, sp, sc, lc], NO_OVERRIDES);
+    expect(strategies.some((s) => s.strategyType === "iron-condor")).toBe(false);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

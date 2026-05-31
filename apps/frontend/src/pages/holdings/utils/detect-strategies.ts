@@ -223,6 +223,38 @@ function classifyButterfly(legs: LegFeature[]): boolean {
   return q2 === -2 * q1;
 }
 
+/** Try 4 same-expiry options -> iron-condor / iron-butterfly. Returns the type or null. */
+function classifyIron(legs: LegFeature[]): StrategyType | null {
+  if (legs.length !== 4) return null;
+  if (!legs.every((f) => f.isOption)) return null;
+  const exp = legs[0].occ!.expiration;
+  if (!legs.every((f) => f.occ!.expiration === exp)) return null;
+
+  const puts = legs.filter((f) => f.occ!.optionType === "PUT");
+  const calls = legs.filter((f) => f.occ!.optionType === "CALL");
+  if (puts.length !== 2 || calls.length !== 2) return null;
+
+  const longPut = puts.find((f) => f.isLong);
+  const shortPut = puts.find((f) => f.isShort);
+  const longCall = calls.find((f) => f.isLong);
+  const shortCall = calls.find((f) => f.isShort);
+  if (!longPut || !shortPut || !longCall || !shortCall) return null;
+
+  // long put is the lowest, long call the highest; shorts in the middle.
+  if (!(longPut.occ!.strikePrice < shortPut.occ!.strikePrice)) return null;
+  if (!(shortCall.occ!.strikePrice < longCall.occ!.strikePrice)) return null;
+  // all put strikes < all call strikes
+  const maxPut = Math.max(longPut.occ!.strikePrice, shortPut.occ!.strikePrice);
+  const minCall = Math.min(longCall.occ!.strikePrice, shortCall.occ!.strikePrice);
+  if (!(maxPut <= minCall)) return null;
+
+  // iron butterfly: short put and short call share the same middle strike
+  if (shortPut.occ!.strikePrice === shortCall.occ!.strikePrice) return "iron-butterfly";
+  // iron condor: strict separation (short put < short call)
+  if (shortPut.occ!.strikePrice < shortCall.occ!.strikePrice) return "iron-condor";
+  return null;
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
@@ -234,6 +266,35 @@ export function detectStrategies(
   const strategies: StrategyGroupRow[] = [];
 
   const avail = () => pool.filter((f) => !consumed.has(f));
+
+  // ---- iron-condor / iron-butterfly: 4 same-expiry options ------------
+  {
+    const opts = avail().filter((f) => f.isOption);
+    outerIron: for (let a = 0; a < opts.length; a++) {
+      for (let b = a + 1; b < opts.length; b++) {
+        for (let c = b + 1; c < opts.length; c++) {
+          for (let d = c + 1; d < opts.length; d++) {
+            const quad = [opts[a], opts[b], opts[c], opts[d]];
+            if (quad.some((f) => consumed.has(f))) continue;
+            const type = classifyIron(quad);
+            if (type) {
+              quad.forEach((f) => consumed.add(f));
+              strategies.push(
+                buildStrategyRow(
+                  underlyingKey,
+                  type,
+                  defaultStrategyLabel(type),
+                  "auto",
+                  quad.map((f) => f.holding),
+                ),
+              );
+              continue outerIron;
+            }
+          }
+        }
+      }
+    }
+  }
 
   // ---- butterfly: 3 same-type same-expiry options, 1:2:1 equidistant ---
   {
