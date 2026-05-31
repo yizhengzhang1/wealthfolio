@@ -12,6 +12,7 @@ import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { groupHoldingsByUnderlying, isHoldingGroupRow, type HoldingRow } from "../utils/group-by-underlying";
+import { isStrategyGroupRow } from "../utils/detect-strategies";
 import { HoldingsMobileFilterSheet } from "./holdings-mobile-filter-sheet";
 
 interface HoldingsTableMobileProps {
@@ -124,21 +125,27 @@ export const HoldingsTableMobile = ({
   const rows: HoldingRow[] = useMemo(() => {
     if (!groupByUnderlying) return filteredHoldings;
     const grouped = groupHoldingsByUnderlying(filteredHoldings);
+    const marketValueOf = (r: HoldingRow) =>
+      isHoldingGroupRow(r) || isStrategyGroupRow(r) ? r.marketValueBase : (r.marketValue?.base ?? 0);
+    const symbolOf = (r: HoldingRow) =>
+      isHoldingGroupRow(r)
+        ? r.underlyingSymbol
+        : isStrategyGroupRow(r)
+          ? r.underlyingKey
+          : (r.instrument?.symbol ?? r.id);
     const sorted = [...grouped].sort((a, b) => {
       if (sortBy === "marketValue") {
-        const va = isHoldingGroupRow(a) ? a.marketValueBase : (a.marketValue?.base ?? 0);
-        const vb = isHoldingGroupRow(b) ? b.marketValueBase : (b.marketValue?.base ?? 0);
-        return vb - va;
+        return marketValueOf(b) - marketValueOf(a);
       }
-      const sa = isHoldingGroupRow(a) ? a.underlyingSymbol : (a.instrument?.symbol ?? a.id);
-      const sb = isHoldingGroupRow(b) ? b.underlyingSymbol : (b.instrument?.symbol ?? b.id);
-      return sa.toLowerCase().localeCompare(sb.toLowerCase());
+      return symbolOf(a).toLowerCase().localeCompare(symbolOf(b).toLowerCase());
     });
     for (const r of sorted) {
       if (isHoldingGroupRow(r)) {
-        r.subRows.sort((x, y) =>
-          (x.instrument?.symbol ?? x.id).localeCompare(y.instrument?.symbol ?? y.id),
-        );
+        r.subRows.sort((x, y) => {
+          const sx = isStrategyGroupRow(x) ? x.name : (x.instrument?.symbol ?? x.id);
+          const sy = isStrategyGroupRow(y) ? y.name : (y.instrument?.symbol ?? y.id);
+          return sx.localeCompare(sy);
+        });
       }
     }
     return sorted;
@@ -308,12 +315,15 @@ export const HoldingsTableMobile = ({
                   </Card>
                   {expanded && (
                     <div className="ml-4 space-y-2 border-l pl-2">
-                      {row.subRows.map((leg) => renderLeafCard(leg))}
+                      {row.subRows
+                        .filter((leg): leg is Holding => !isStrategyGroupRow(leg))
+                        .map((leg) => renderLeafCard(leg))}
                     </div>
                   )}
                 </div>
               );
             }
+            if (isStrategyGroupRow(row)) return null;
             return renderLeafCard(row);
           })
         ) : (

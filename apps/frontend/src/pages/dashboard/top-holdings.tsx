@@ -10,6 +10,7 @@ import {
   type HoldingGroupRow,
   type HoldingRow as HoldingRowItem,
 } from "@/pages/holdings/utils/group-by-underlying";
+import { isStrategyGroupRow } from "@/pages/holdings/utils/detect-strategies";
 import { cn } from "@/lib/utils";
 import {
   AmountDisplay,
@@ -201,11 +202,13 @@ function StackedAvatars({ holdings, totalRemaining, onClick }: StackedAvatarsPro
         {displayedHoldings.map((holding, index) => {
           const avatarSym = isHoldingGroupRow(holding)
             ? holding.underlyingSymbol
-            : (() => {
-                const s = holding.instrument?.symbol ?? holding.id;
-                const parsed = parseOccSymbol(s);
-                return parsed ? parsed.underlying : s;
-              })();
+            : isStrategyGroupRow(holding)
+              ? holding.underlyingKey
+              : (() => {
+                  const s = holding.instrument?.symbol ?? holding.id;
+                  const parsed = parseOccSymbol(s);
+                  return parsed ? parsed.underlying : s;
+                })();
           return (
             <div
               key={holding.id}
@@ -314,9 +317,11 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
       : filtered;
 
     const valueOf = (it: HoldingRowItem) =>
-      isHoldingGroupRow(it) ? it.marketValueBase : (it.marketValue?.base ?? 0);
+      isHoldingGroupRow(it) || isStrategyGroupRow(it)
+        ? it.marketValueBase
+        : (it.marketValue?.base ?? 0);
     const gainOf = (it: HoldingRowItem) =>
-      isHoldingGroupRow(it)
+      isHoldingGroupRow(it) || isStrategyGroupRow(it)
         ? showTotalReturn
           ? it.totalGainBase
           : it.dayChangeBase
@@ -491,24 +496,27 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
               />
               {expanded && (
                 <div className="border-border ml-3 border-l pl-3">
-                  {item.subRows.map((leg) => (
-                    <HoldingRow
-                      key={leg.id}
-                      holding={leg}
-                      baseCurrency={baseCurrency}
-                      isHidden={isBalanceHidden}
-                      showTotalReturn={showTotalReturn}
-                      showName={displayMode === "name"}
-                      onClick={() =>
-                        navigate(`/holdings/${encodeURIComponent(leg.instrument?.id ?? leg.id)}`)
-                      }
-                    />
-                  ))}
+                  {item.subRows
+                    .filter((leg): leg is Holding => !isStrategyGroupRow(leg))
+                    .map((leg) => (
+                      <HoldingRow
+                        key={leg.id}
+                        holding={leg}
+                        baseCurrency={baseCurrency}
+                        isHidden={isBalanceHidden}
+                        showTotalReturn={showTotalReturn}
+                        showName={displayMode === "name"}
+                        onClick={() =>
+                          navigate(`/holdings/${encodeURIComponent(leg.instrument?.id ?? leg.id)}`)
+                        }
+                      />
+                    ))}
                 </div>
               )}
             </div>
           );
         }
+        if (isStrategyGroupRow(item)) return null;
         const assetId = item.instrument?.id ?? item.id;
         return (
           <HoldingRow
