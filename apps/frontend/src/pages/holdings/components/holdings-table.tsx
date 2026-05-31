@@ -17,13 +17,18 @@ import { TickerAvatar } from "@/components/ticker-avatar";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
 import { AmountDisplay, QuantityDisplay } from "@wealthfolio/ui";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AnimatedToggleGroup } from "@wealthfolio/ui";
+import {
+  groupHoldingsByUnderlying,
+  isHoldingGroupRow,
+  type HoldingRow,
+} from "../utils/group-by-underlying";
 
 // Helper function to get display value and currency based on toggle state
 const getDisplayValueAndCurrency = (
@@ -64,7 +69,14 @@ export const HoldingsTable = ({
 }) => {
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
-  const [showConvertedValues, setShowConvertedValues] = useState(false);
+  const [showConvertedValues, setShowConvertedValues] = usePersistentState<boolean>(
+    "holdings-table:show-converted",
+    false,
+  );
+  const [groupByUnderlying, setGroupByUnderlying] = usePersistentState<boolean>(
+    "holdings-table:group-by-underlying",
+    true,
+  );
 
   const baseCurrency = settings?.baseCurrency ?? holdings[0]?.baseCurrency;
   const hasMultipleCurrencies = holdings.some((holding) => {
@@ -108,15 +120,22 @@ export const HoldingsTable = ({
     },
   ];
 
+  const tableData: HoldingRow[] = groupByUnderlying
+    ? groupHoldingsByUnderlying(holdings)
+    : holdings;
+
   return (
     <div className="flex h-full flex-col">
       <DataTable
-        data={holdings}
+        data={tableData}
         columns={getColumns(isBalanceHidden, showConvertedValues, showTotalReturn, onClassify)}
         searchBy="symbol"
         filters={filters}
         showColumnToggle={true}
         storageKey="holdings-table"
+        getSubRows={(row) => (isHoldingGroupRow(row) ? row.subRows : undefined)}
+        defaultExpanded={true}
+        filterFromLeafRows={true}
         defaultColumnVisibility={{
           currency: false,
           symbolName: false,
@@ -127,6 +146,16 @@ export const HoldingsTable = ({
         scrollable={true}
         toolbarActions={
           <div className="mr-2 flex items-center gap-2">
+            <AnimatedToggleGroup
+              value={groupByUnderlying ? "grouped" : "flat"}
+              onValueChange={(value) => setGroupByUnderlying(value === "grouped")}
+              items={[
+                { value: "grouped", label: "Grouped" },
+                { value: "flat", label: "Flat" },
+              ]}
+              size="xs"
+              rounded="md"
+            />
             {setShowTotalReturn && (
               <AnimatedToggleGroup
                 value={showTotalReturn ? "total" : "daily"}
@@ -174,76 +203,110 @@ const getColumns = (
   showConvertedValues: boolean,
   showTotalReturn: boolean,
   onClassify?: (holding: Holding) => void,
-): ColumnDef<Holding>[] => [
+): ColumnDef<HoldingRow>[] => [
   {
     id: "symbol",
-    accessorKey: "instrument.symbol",
+    accessorFn: (row) =>
+      isHoldingGroupRow(row) ? row.underlyingSymbol : row.instrument?.symbol ?? row.id,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Position" />,
     meta: {
       label: "Position",
     },
     cell: ({ row }) => {
       const navigate = useNavigate();
-      const holding = row.original;
-      const symbol = holding.instrument?.symbol ?? holding.id;
+      const data = row.original;
 
-      // Parse OCC symbol for options
+      if (isHoldingGroupRow(data)) {
+        return (
+          <button
+            type="button"
+            className="-m-1 flex w-full items-center p-1 text-left"
+            style={{ paddingLeft: `${row.depth * 1.5}rem` }}
+            onClick={row.getToggleExpandedHandler()}
+          >
+            {row.getIsExpanded() ? (
+              <Icons.ChevronDown className="mr-1 h-4 w-4 shrink-0" />
+            ) : (
+              <Icons.ChevronRight className="mr-1 h-4 w-4 shrink-0" />
+            )}
+            <TickerAvatar symbol={data.underlyingSymbol} className="mr-2 h-8 w-8" />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium">{data.underlyingSymbol}</span>
+                <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
+                  {data.memberCount}
+                </Badge>
+              </div>
+              <span className="text-muted-foreground line-clamp-1 text-xs">
+                {data.underlyingName ?? ""}
+              </span>
+            </div>
+          </button>
+        );
+      }
+
+      const holding = data;
+      const symbol = holding.instrument?.symbol ?? holding.id;
       const parsedOption = parseOccSymbol(symbol);
       const displaySymbol = parsedOption ? parsedOption.underlying : symbol;
-
-      // Option subtitle: "Mar 29 $150 CALL"
       const optionSubtitle = parsedOption
         ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
         : null;
 
       const handleNavigate = () => {
-        // Use instrument.id (asset ID) for navigation, not symbol (which may be stripped)
         const navSymbol = holding.instrument?.id ?? holding.id;
         navigate(`/holdings/${encodeURIComponent(navSymbol)}`, { state: { holding } });
       };
 
       const isManual = holding.instrument?.quoteMode === "MANUAL";
-      const content = (
-        <div className="flex items-center">
-          <TickerAvatar
-            symbol={parsedOption ? parsedOption.underlying : symbol}
-            className="mr-2 h-8 w-8"
-          />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="font-medium">{displaySymbol}</span>
-              {isManual && (
-                <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
-                  Manual
-                </Badge>
-              )}
-            </div>
-            <span className="text-muted-foreground line-clamp-1 text-xs">
-              {optionSubtitle ?? holding.instrument?.name ?? null}
-            </span>
-          </div>
-        </div>
-      );
-
       return (
-        <div className="-m-1 cursor-pointer p-1" onClick={handleNavigate}>
-          {content}
+        <div
+          className="-m-1 cursor-pointer p-1"
+          style={{ paddingLeft: row.depth > 0 ? `${row.depth * 1.5 + 0.25}rem` : undefined }}
+          onClick={handleNavigate}
+        >
+          <div className="flex items-center">
+            <TickerAvatar
+              symbol={parsedOption ? parsedOption.underlying : symbol}
+              className="mr-2 h-8 w-8"
+            />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium">{displaySymbol}</span>
+                {isManual && (
+                  <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
+                    Manual
+                  </Badge>
+                )}
+              </div>
+              <span className="text-muted-foreground line-clamp-1 text-xs">
+                {optionSubtitle ?? holding.instrument?.name ?? null}
+              </span>
+            </div>
+          </div>
         </div>
       );
     },
     sortingFn: (rowA, rowB) => {
-      const symbolA = rowA.original.instrument?.symbol ?? rowA.original.id;
-      const symbolB = rowB.original.instrument?.symbol ?? rowB.original.id;
+      const a = rowA.original;
+      const b = rowB.original;
+      const symbolA = isHoldingGroupRow(a) ? a.underlyingSymbol : a.instrument?.symbol ?? a.id;
+      const symbolB = isHoldingGroupRow(b) ? b.underlyingSymbol : b.instrument?.symbol ?? b.id;
       return symbolA.localeCompare(symbolB);
     },
     filterFn: (row, _columnId, filterValue) => {
-      const holding = row.original;
-      const searchTerm = filterValue as string;
-      const lowerSearch = searchTerm.toLowerCase();
+      const data = row.original;
+      const lowerSearch = (filterValue as string).toLowerCase();
+      if (isHoldingGroupRow(data)) {
+        return (
+          data.underlyingSymbol.toLowerCase().includes(lowerSearch) ||
+          (data.underlyingName?.toLowerCase().includes(lowerSearch) ?? false)
+        );
+      }
+      const holding = data;
       const nameMatch = holding.instrument?.name?.toLowerCase().includes(lowerSearch);
       const symbolMatch = holding.instrument?.symbol?.toLowerCase().includes(lowerSearch);
       const idMatch = holding.id.toLowerCase().includes(lowerSearch);
-      // Also match on the underlying symbol for options
       const parsed = parseOccSymbol(holding.instrument?.symbol ?? "");
       const underlyingMatch = parsed?.underlying.toLowerCase().includes(lowerSearch);
       return !!(symbolMatch || nameMatch || idMatch || underlyingMatch);
@@ -252,7 +315,8 @@ const getColumns = (
   },
   {
     id: "symbolName",
-    accessorFn: (row) => row.instrument?.name || row.id,
+    accessorFn: (row) =>
+      isHoldingGroupRow(row) ? row.underlyingName ?? row.underlyingSymbol : row.instrument?.name || row.id,
     meta: {
       label: "Symbol Name",
     },
@@ -260,7 +324,7 @@ const getColumns = (
   },
   {
     id: "quantity",
-    accessorKey: "quantity",
+    accessorFn: (row) => (isHoldingGroupRow(row) ? 0 : row.quantity),
     enableHiding: true,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end text-right" column={column} title="Qty" />
@@ -269,27 +333,30 @@ const getColumns = (
       label: "Quantity",
     },
     cell: ({ row }) => {
-      const symbol = row.original.instrument?.symbol ?? row.original.id;
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        return <div className="min-h-[40px] px-4" />;
+      }
+      const symbol = data.instrument?.symbol ?? data.id;
       const isOption = !!parseOccSymbol(symbol);
-      const assetTypeKey = row.original.instrument?.classifications?.assetType?.key ?? "";
+      const assetTypeKey = data.instrument?.classifications?.assetType?.key ?? "";
       const isBond =
         assetTypeKey.startsWith("BOND_") ||
         assetTypeKey === "DEBT_SECURITY" ||
         assetTypeKey === "MONEY_MARKET_DEBT";
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <QuantityDisplay value={row.original.quantity} isHidden={isHidden} />
+          <QuantityDisplay value={data.quantity} isHidden={isHidden} />
           <span className="text-muted-foreground text-xs">
             {isOption ? "contracts" : isBond ? "bonds" : "shares"}
           </span>
         </div>
       );
     },
-    sortingFn: (rowA, rowB) => rowA.original.quantity - rowB.original.quantity,
   },
   {
     id: "marketPrice",
-    accessorFn: (row) => row.price ?? 0,
+    accessorFn: (row) => (isHoldingGroupRow(row) ? row.underlyingPrice ?? 0 : row.price ?? 0),
     enableHiding: true,
     enableSorting: true,
     header: ({ column }) => (
@@ -303,20 +370,31 @@ const getColumns = (
       label: "Today's Price",
     },
     cell: ({ row }) => {
-      const holding = row.original;
-      const price = holding.price ?? 0;
-      const currency = holding.localCurrency;
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        if (data.underlyingPrice == null) {
+          return <div className="min-h-[40px] px-4" />;
+        }
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={data.underlyingPrice} currency={data.baseCurrency} />
+            <GainPercent className="text-xs" value={data.dayChangePct || 0} />
+          </div>
+        );
+      }
+      const price = data.price ?? 0;
+      const currency = data.localCurrency;
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <AmountDisplay value={price} currency={currency} />
-          <GainPercent className="text-xs" value={holding.dayChangePct || 0} />
+          <GainPercent className="text-xs" value={data.dayChangePct || 0} />
         </div>
       );
     },
   },
   {
     id: "bookValue",
-    accessorFn: (row) => row.costBasis?.local ?? 0,
+    accessorFn: (row) => (isHoldingGroupRow(row) ? row.costBasisBase : row.costBasis?.local ?? 0),
     enableHiding: true,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end" column={column} title="Book Cost" />
@@ -325,10 +403,17 @@ const getColumns = (
       label: "Book Cost",
     },
     cell: ({ row }) => {
-      const holding = row.original;
-      const value = holding.costBasis?.local ?? 0;
-      const currency = holding.localCurrency;
-
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={data.costBasisBase} currency={data.baseCurrency} isHidden={isHidden} />
+            <div className="text-xs text-transparent">-</div>
+          </div>
+        );
+      }
+      const value = data.costBasis?.local ?? 0;
+      const currency = data.localCurrency;
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <AmountDisplay value={value} currency={currency} isHidden={isHidden} />
@@ -336,15 +421,10 @@ const getColumns = (
         </div>
       );
     },
-    sortingFn: (rowA, rowB) => {
-      const valueA = rowA.original.costBasis?.local ?? 0;
-      const valueB = rowB.original.costBasis?.local ?? 0;
-      return valueA - valueB;
-    },
   },
   {
     id: "marketValue",
-    accessorFn: (row) => row.marketValue.base ?? 0,
+    accessorFn: (row) => (isHoldingGroupRow(row) ? row.marketValueBase : row.marketValue.base ?? 0),
     enableHiding: false,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end" column={column} title="Total Value" />
@@ -353,13 +433,20 @@ const getColumns = (
       label: "Total Value",
     },
     cell: ({ row }) => {
-      const holding = row.original;
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={data.marketValueBase} currency={data.baseCurrency} isHidden={isHidden} />
+            <div className="text-muted-foreground text-xs">{data.baseCurrency}</div>
+          </div>
+        );
+      }
       const { value, currency } = getDisplayValueAndCurrency(
-        holding,
-        holding.marketValue.base,
+        data,
+        data.marketValue.base,
         showConvertedValues,
       );
-
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <AmountDisplay value={value} currency={currency} isHidden={isHidden} />
@@ -367,20 +454,13 @@ const getColumns = (
         </div>
       );
     },
-    sortingFn: (rowA, rowB) => {
-      const holdingA = rowA.original;
-      const holdingB = rowB.original;
-
-      // Always sort by base currency value for consistency
-      const valueA = holdingA.marketValue.base ?? 0;
-      const valueB = holdingB.marketValue.base ?? 0;
-
-      return valueA - valueB;
-    },
   },
   {
     id: "performance",
-    accessorFn: (row) => row.totalGain?.base ?? 0,
+    accessorFn: (row) =>
+      isHoldingGroupRow(row)
+        ? (showTotalReturn ? row.totalGainBase : row.dayChangeBase)
+        : (showTotalReturn ? row.totalGain?.base : row.dayChange?.base) ?? 0,
     enableHiding: false,
     header: ({ column }) => (
       <DataTableColumnHeader
@@ -393,16 +473,20 @@ const getColumns = (
       label: "Unrealized Gain",
     },
     cell: ({ row }) => {
-      const holding = row.original;
-      const valueBase = showTotalReturn ? holding.totalGain?.base : holding.dayChange?.base;
-      const pct = showTotalReturn ? holding.totalGainPct : holding.dayChangePct;
-
-      const { value, currency } = getDisplayValueAndCurrency(
-        holding,
-        valueBase,
-        showConvertedValues,
-      );
-
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        const value = showTotalReturn ? data.totalGainBase : data.dayChangeBase;
+        const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={value} currency={data.baseCurrency} colorFormat={true} isHidden={isHidden} />
+            <GainPercent className="text-xs" value={pct || 0} />
+          </div>
+        );
+      }
+      const valueBase = showTotalReturn ? data.totalGain?.base : data.dayChange?.base;
+      const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
+      const { value, currency } = getDisplayValueAndCurrency(data, valueBase, showConvertedValues);
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <AmountDisplay value={value} currency={currency} colorFormat={true} isHidden={isHidden} />
@@ -410,20 +494,11 @@ const getColumns = (
         </div>
       );
     },
-    sortingFn: (rowA, rowB) => {
-      const holdingA = rowA.original;
-      const holdingB = rowB.original;
-
-      // Always sort by base currency value for consistency
-      const valueA = (showTotalReturn ? holdingA.totalGain?.base : holdingA.dayChange?.base) ?? 0;
-      const valueB = (showTotalReturn ? holdingB.totalGain?.base : holdingB.dayChange?.base) ?? 0;
-
-      return valueA - valueB;
-    },
   },
   {
     id: "holdingType",
-    accessorFn: (row) => row.instrument?.classifications?.assetType?.name,
+    accessorFn: (row) =>
+      isHoldingGroupRow(row) ? undefined : row.instrument?.classifications?.assetType?.name,
     meta: {
       label: "Asset Type",
     },
@@ -432,12 +507,18 @@ const getColumns = (
   },
   {
     id: "currency",
-    accessorKey: "localCurrency",
+    accessorFn: (row) => (isHoldingGroupRow(row) ? row.baseCurrency : row.localCurrency),
     header: ({ column }) => <DataTableColumnHeader column={column} title="Currency" />,
     meta: {
       label: "Currency",
     },
-    cell: ({ row }) => <div className="text-muted-foreground">{row.original.localCurrency}</div>,
+    cell: ({ row }) => {
+      const data = row.original;
+      if (isHoldingGroupRow(data)) {
+        return <div className="text-muted-foreground">{data.baseCurrency}</div>;
+      }
+      return <div className="text-muted-foreground">{data.localCurrency}</div>;
+    },
     filterFn: (row, id, value) => {
       return value.includes(row.getValue(id));
     },
@@ -448,11 +529,16 @@ const getColumns = (
     header: () => null,
     cell: ({ row }) => {
       const navigate = useNavigate();
-      const holding = row.original;
+      const data = row.original;
+
+      if (isHoldingGroupRow(data)) {
+        return <div className="flex items-center justify-end" />;
+      }
+
+      const holding = data;
       const hasInstrument = !!holding.instrument;
 
       const handleNavigate = () => {
-        // Use instrument.id (asset ID) for navigation, not symbol (which may be stripped)
         const navSymbol = holding.instrument?.id ?? holding.id;
         navigate(`/holdings/${encodeURIComponent(navSymbol)}`, {
           state: { holding },
