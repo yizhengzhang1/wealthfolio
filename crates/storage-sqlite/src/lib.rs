@@ -41,6 +41,7 @@ pub mod health;
 pub mod limits;
 pub mod lots;
 pub mod market_data;
+pub mod option_strategy;
 pub mod portfolio;
 pub mod portfolios;
 pub mod settings;
