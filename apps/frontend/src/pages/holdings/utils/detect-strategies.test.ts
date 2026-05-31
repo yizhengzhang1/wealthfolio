@@ -135,4 +135,66 @@ describe("buildStrategyRow", () => {
   });
 });
 
+describe("two-leg: vertical / calendar / diagonal", () => {
+  it("bull call vertical: same type, same expiry, long lower strike + short higher", () => {
+    const long = makeHolding({ id: "L", symbol: call(100, EXP_A), quantity: 1, cost: 600 });
+    const short = makeHolding({ id: "S", symbol: call(110, EXP_A), quantity: -1, cost: -200 });
+    const { strategies, looseLegs } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("vertical");
+    expect(strategies[0].name).toBe("Bull Call Spread");
+    expect(strategies[0].memberCount).toBe(2);
+    expect(strategies[0].netCashBase).toBeCloseTo(400, 2);
+  });
+
+  it("bear put vertical: same type, same expiry, long higher strike", () => {
+    const long = makeHolding({ id: "L", symbol: put(110, EXP_A), quantity: 1 });
+    const short = makeHolding({ id: "S", symbol: put(100, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("vertical");
+    expect(strategies[0].name).toBe("Bear Put Spread");
+  });
+
+  it("bull put vertical (credit): put, same expiry, long lower strike", () => {
+    const long = makeHolding({ id: "L", symbol: put(100, EXP_A), quantity: 1 });
+    const short = makeHolding({ id: "S", symbol: put(110, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("vertical");
+    expect(strategies[0].name).toBe("Bull Put Spread");
+  });
+
+  it("bear call vertical: call, same expiry, long higher strike", () => {
+    const long = makeHolding({ id: "L", symbol: call(110, EXP_A), quantity: 1 });
+    const short = makeHolding({ id: "S", symbol: call(100, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("vertical");
+    expect(strategies[0].name).toBe("Bear Call Spread");
+  });
+
+  it("calendar: same type, same strike, different expiry, one long one short", () => {
+    const long = makeHolding({ id: "L", symbol: call(100, EXP_B), quantity: 1 });
+    const short = makeHolding({ id: "S", symbol: call(100, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("calendar");
+    expect(strategies[0].name).toBe("Calendar Spread");
+  });
+
+  it("diagonal: same type, different strike AND different expiry, one long one short", () => {
+    const long = makeHolding({ id: "L", symbol: call(100, EXP_A), quantity: 1 });
+    const short = makeHolding({ id: "S", symbol: call(110, EXP_B), quantity: -1 });
+    const { strategies } = detectStrategies([long, short], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("diagonal");
+    expect(strategies[0].name).toBe("Diagonal Spread");
+  });
+
+  it("two longs of same type do not form a vertical (ambiguous -> loose)", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([a, b], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

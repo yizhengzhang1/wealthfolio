@@ -127,13 +127,70 @@ function deriveUnderlyingKey(legs: Holding[]): string {
   return legs.length > 0 ? symbolOf(legs[0]) : "";
 }
 
+function isOptionPairOppositeSides(a: LegFeature, b: LegFeature): boolean {
+  return a.isOption && b.isOption && ((a.isLong && b.isShort) || (a.isShort && b.isLong));
+}
+
+/** Direction label for a vertical: uniform for call/put — long lower=bull, long higher=bear. */
+function verticalLabel(a: LegFeature, b: LegFeature): string {
+  const long = a.isLong ? a : b;
+  const short = a.isLong ? b : a;
+  const isCall = long.occ!.optionType === "CALL";
+  const bull = long.occ!.strikePrice < short.occ!.strikePrice;
+  if (isCall) return bull ? "Bull Call Spread" : "Bear Call Spread";
+  return bull ? "Bull Put Spread" : "Bear Put Spread";
+}
+
+/** Try to classify a same-type, opposite-side option pair. Returns null if not a 2-leg spread. */
+function classifyVerticalFamily(
+  a: LegFeature,
+  b: LegFeature,
+): { type: StrategyType; name: string } | null {
+  if (!isOptionPairOppositeSides(a, b)) return null;
+  if (a.occ!.optionType !== b.occ!.optionType) return null;
+  const sameStrike = a.occ!.strikePrice === b.occ!.strikePrice;
+  const sameExpiry = a.occ!.expiration === b.occ!.expiration;
+  if (!sameStrike && sameExpiry) return { type: "vertical", name: verticalLabel(a, b) };
+  if (sameStrike && !sameExpiry) return { type: "calendar", name: defaultStrategyLabel("calendar") };
+  if (!sameStrike && !sameExpiry) return { type: "diagonal", name: defaultStrategyLabel("diagonal") };
+  return null; // same strike & same expiry of same type & opposite sides => degenerate, skip
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
 ): { strategies: StrategyGroupRow[]; looseLegs: Holding[] } {
   if (legs.length === 0) return { strategies: [], looseLegs: [] };
   const underlyingKey = deriveUnderlyingKey(legs);
-  void underlyingKey;
-  // Stub: implemented incrementally in later tasks.
-  return { strategies: [], looseLegs: [...legs] };
+  const pool: LegFeature[] = legs.map((h) => extractFeature(h, underlyingKey));
+  const consumed = new Set<LegFeature>();
+  const strategies: StrategyGroupRow[] = [];
+
+  const avail = () => pool.filter((f) => !consumed.has(f));
+
+  // ---- 2-leg verticals / calendars / diagonals -------------------------
+  for (let i = 0; i < pool.length; i++) {
+    if (consumed.has(pool[i])) continue;
+    for (let j = i + 1; j < pool.length; j++) {
+      if (consumed.has(pool[j])) continue;
+      const hit = classifyVerticalFamily(pool[i], pool[j]);
+      if (hit) {
+        consumed.add(pool[i]);
+        consumed.add(pool[j]);
+        strategies.push(
+          buildStrategyRow(
+            underlyingKey,
+            hit.type,
+            hit.name,
+            "auto",
+            [pool[i].holding, pool[j].holding],
+          ),
+        );
+        break;
+      }
+    }
+  }
+
+  const looseLegs = avail().map((f) => f.holding);
+  return { strategies, looseLegs };
 }
