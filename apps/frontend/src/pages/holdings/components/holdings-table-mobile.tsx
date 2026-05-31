@@ -132,7 +132,7 @@ export const HoldingsTableMobile = ({
       }
       const sa = isHoldingGroupRow(a) ? a.underlyingSymbol : (a.instrument?.symbol ?? a.id);
       const sb = isHoldingGroupRow(b) ? b.underlyingSymbol : (b.instrument?.symbol ?? b.id);
-      return sa.localeCompare(sb);
+      return sa.toLowerCase().localeCompare(sb.toLowerCase());
     });
     for (const r of sorted) {
       if (isHoldingGroupRow(r)) {
