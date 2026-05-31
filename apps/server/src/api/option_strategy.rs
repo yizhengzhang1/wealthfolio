@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, RawQuery, State},
+    http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -64,7 +65,7 @@ async fn update_option_strategy_override(
 async fn delete_option_strategy_override(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> ApiResult<()> {
+) -> ApiResult<StatusCode> {
     state.option_strategy_service.delete(&id).await?;
-    Ok(())
+    Ok(StatusCode::NO_CONTENT)
 }
