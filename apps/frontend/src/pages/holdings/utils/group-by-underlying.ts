@@ -1,5 +1,9 @@
 import { parseOccSymbol } from "@/lib/occ-symbol";
-import type { Holding } from "@/lib/types";
+import type { Holding, StrategyOverride } from "@/lib/types";
+import {
+  detectStrategies,
+  type StrategyGroupRow,
+} from "./detect-strategies";
 
 export interface HoldingGroupRow {
   kind: "group";
@@ -17,7 +21,12 @@ export interface HoldingGroupRow {
   dayChangeBase: number;
   dayChangePct: number | null;
   weight: number;
-  subRows: Holding[];
+  subRows: (StrategyGroupRow | Holding)[];
+}
+
+export interface GroupOptions {
+  groupByStrategy: boolean;
+  overrides: StrategyOverride[];
 }
 
 export type HoldingRow = HoldingGroupRow | Holding;
@@ -32,7 +41,10 @@ export function getUnderlyingKey(holding: Holding): string {
   return parsed ? parsed.underlying : symbol;
 }
 
-export function groupHoldingsByUnderlying(holdings: Holding[]): HoldingRow[] {
+export function groupHoldingsByUnderlying(
+  holdings: Holding[],
+  options?: GroupOptions,
+): HoldingRow[] {
   // Map 保留首次出现顺序,输出确定。
   const buckets = new Map<string, Holding[]>();
   for (const holding of holdings) {
@@ -47,13 +59,17 @@ export function groupHoldingsByUnderlying(holdings: Holding[]): HoldingRow[] {
     if (members.length < 2) {
       rows.push(members[0]);
     } else {
-      rows.push(buildGroupRow(key, members));
+      rows.push(buildGroupRow(key, members, options));
     }
   }
   return rows;
 }
 
-function buildGroupRow(underlyingKey: string, members: Holding[]): HoldingGroupRow {
+function buildGroupRow(
+  underlyingKey: string,
+  members: Holding[],
+  options?: GroupOptions,
+): HoldingGroupRow {
   const stock = members.find((h) => (h.instrument?.symbol ?? h.id) === underlyingKey);
 
   let marketValueBase = 0;
@@ -69,6 +85,13 @@ function buildGroupRow(underlyingKey: string, members: Holding[]): HoldingGroupR
     dayChangeBase += h.dayChange?.base ?? 0;
     prevCloseBase += h.prevCloseValue?.base ?? 0;
     weight += h.weight ?? 0;
+  }
+
+  let subRows: (StrategyGroupRow | Holding)[] = members;
+  const hasOptionLeg = members.some((h) => parseOccSymbol(h.instrument?.symbol ?? h.id) !== null);
+  if (options?.groupByStrategy && hasOptionLeg) {
+    const { strategies, looseLegs } = detectStrategies(members, options.overrides);
+    subRows = [...strategies, ...looseLegs];
   }
 
   return {
@@ -89,6 +112,6 @@ function buildGroupRow(underlyingKey: string, members: Holding[]): HoldingGroupR
     dayChangeBase,
     dayChangePct: prevCloseBase !== 0 ? dayChangeBase / Math.abs(prevCloseBase) : null,
     weight,
-    subRows: members,
+    subRows,
   };
 }

@@ -2415,6 +2415,6 @@ export interface StrategyGroupRow {
   subRows: Holding[];
 }
 
-export function isStrategyGroupRow(row: { kind?: string }): row is StrategyGroupRow {
-  return row.kind === "strategy";
+export function isStrategyGroupRow(row: unknown): row is StrategyGroupRow {
+  return (row as { kind?: string } | null)?.kind === "strategy";
 }

@@ -6,6 +6,7 @@ import {
   isHoldingGroupRow,
   type HoldingGroupRow,
 } from "./group-by-underlying";
+import { isStrategyGroupRow } from "./detect-strategies";
 
 // 最小 Holding 工厂(只填测试用到的字段,其余以 as Holding 跳过)
 function makeHolding(p: {
@@ -123,5 +124,97 @@ describe("groupHoldingsByUnderlying", () => {
     expect(isHoldingGroupRow(rows[0])).toBe(true);
     expect((rows[0] as HoldingGroupRow).underlyingSymbol).toBe("AAPL");
     expect(isHoldingGroupRow(rows[1])).toBe(false);
+  });
+});
+
+// Vertical call spread on ASTS: long low strike + short high strike, same expiry.
+const VERT_LONG = "ASTS260612C00100000"; // long 100
+const VERT_SHORT = "ASTS260612C00110000"; // short 110
+
+function makeLeg(p: {
+  id: string;
+  symbol: string;
+  qty: number;
+  accountId?: string;
+  cost?: number;
+  mv?: number;
+}): Holding {
+  return {
+    id: p.id,
+    accountId: p.accountId ?? "acc-1",
+    instrument: { id: p.id, symbol: p.symbol, name: p.symbol, currency: "USD", quoteMode: "LIVE" },
+    quantity: p.qty,
+    price: 1,
+    contractMultiplier: 100,
+    localCurrency: "USD",
+    baseCurrency: "USD",
+    fxRate: 1,
+    marketValue: { local: p.mv ?? 0, base: p.mv ?? 0 },
+    costBasis: { local: p.cost ?? 0, base: p.cost ?? 0 },
+    totalGain: { local: 0, base: 0 },
+    dayChange: { local: 0, base: 0 },
+    prevCloseValue: { local: 0, base: 0 },
+    weight: 0,
+  } as unknown as Holding;
+}
+
+describe("groupHoldingsByUnderlying — strategy sub-grouping", () => {
+  it("nests detected strategies as strategy rows when groupByStrategy is on", () => {
+    const rows = groupHoldingsByUnderlying(
+      [
+        makeLeg({ id: "L1", symbol: VERT_LONG, qty: 1, cost: 300, mv: 250 }),
+        makeLeg({ id: "L2", symbol: VERT_SHORT, qty: -1, cost: -100, mv: -80 }),
+      ],
+      { groupByStrategy: true, overrides: [] },
+    );
+    expect(rows).toHaveLength(1);
+    const group = rows[0] as HoldingGroupRow;
+    expect(isHoldingGroupRow(group)).toBe(true);
+    // Underlying-level aggregation still sums ALL legs (unchanged).
+    expect(group.marketValueBase).toBeCloseTo(250 - 80, 2);
+    expect(group.costBasisBase).toBeCloseTo(300 - 100, 2);
+    expect(group.memberCount).toBe(2);
+    // subRows now holds one strategy row (no loose legs).
+    expect(group.subRows).toHaveLength(1);
+    expect(isStrategyGroupRow(group.subRows[0])).toBe(true);
+  });
+
+  it("places strategies before loose legs in subRows order", () => {
+    const loose = makeLeg({ id: "S", symbol: "ASTS", qty: 50 }); // bare stock, < covered-call qty -> loose
+    const rows = groupHoldingsByUnderlying(
+      [
+        makeLeg({ id: "L1", symbol: VERT_LONG, qty: 1, cost: 300, mv: 250 }),
+        makeLeg({ id: "L2", symbol: VERT_SHORT, qty: -1, cost: -100, mv: -80 }),
+        loose,
+      ],
+      { groupByStrategy: true, overrides: [] },
+    );
+    const group = rows[0] as HoldingGroupRow;
+    expect(isStrategyGroupRow(group.subRows[0])).toBe(true); // strategy first
+    expect(isStrategyGroupRow(group.subRows[group.subRows.length - 1])).toBe(false); // loose last
+  });
+
+  it("keeps flat legs (P1 behaviour) when groupByStrategy is off", () => {
+    const rows = groupHoldingsByUnderlying(
+      [
+        makeLeg({ id: "L1", symbol: VERT_LONG, qty: 1, cost: 300, mv: 250 }),
+        makeLeg({ id: "L2", symbol: VERT_SHORT, qty: -1, cost: -100, mv: -80 }),
+      ],
+      { groupByStrategy: false, overrides: [] },
+    );
+    const group = rows[0] as HoldingGroupRow;
+    expect(group.subRows).toHaveLength(2);
+    expect(isStrategyGroupRow(group.subRows[0])).toBe(false);
+    expect(isStrategyGroupRow(group.subRows[1])).toBe(false);
+  });
+
+  it("defaults to flat legs when called with no options arg (back-compat)", () => {
+    const rows = groupHoldingsByUnderlying([
+      makeLeg({ id: "L1", symbol: VERT_LONG, qty: 1, cost: 300, mv: 250 }),
+      makeLeg({ id: "L2", symbol: VERT_SHORT, qty: -1, cost: -100, mv: -80 }),
+    ]);
+    const group = rows[0] as HoldingGroupRow;
+    expect(group.subRows).toHaveLength(2);
+    expect(isStrategyGroupRow(group.subRows[0])).toBe(false);
   });
 });

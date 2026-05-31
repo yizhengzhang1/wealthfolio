@@ -1,5 +1,9 @@
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import type { Holding, StrategyGroupRow, StrategyOverride, StrategyType } from "@/lib/types";
+import { isStrategyGroupRow } from "@/lib/types";
+
+export { isStrategyGroupRow };
+export type { StrategyGroupRow };
 
 /** Per-leg features extracted once up front. */
 interface LegFeature {
