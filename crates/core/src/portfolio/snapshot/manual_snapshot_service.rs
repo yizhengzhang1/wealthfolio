@@ -200,7 +200,10 @@ impl ManualSnapshotService {
                 created_at: Utc::now(),
                 last_updated: Utc::now(),
                 is_alternative: false,
-                contract_multiplier: Decimal::ONE,
+                // Use the asset's contract multiplier (100 for options via
+                // OptionSpec, 1 otherwise). Previously hardcoded to 1, which
+                // made option holdings under-value by 100x.
+                contract_multiplier: asset.contract_multiplier(),
             };
             positions.insert(asset.id, position);
         }
