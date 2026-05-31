@@ -4,6 +4,12 @@ import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { HoldingType, isAlternativeAssetKind, type AssetKind } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Holding } from "@/lib/types";
+import {
+  groupHoldingsByUnderlying,
+  isHoldingGroupRow,
+  type HoldingGroupRow,
+  type HoldingRow as HoldingRowItem,
+} from "@/pages/holdings/utils/group-by-underlying";
 import { cn } from "@/lib/utils";
 import {
   AmountDisplay,
@@ -102,8 +108,71 @@ function HoldingRow({
   );
 }
 
+interface GroupHoldingRowProps {
+  group: HoldingGroupRow;
+  baseCurrency: string;
+  isHidden?: boolean;
+  showTotalReturn: boolean;
+  showName: boolean;
+  onClick?: () => void;
+}
+
+function GroupHoldingRow({
+  group,
+  baseCurrency,
+  isHidden,
+  showTotalReturn,
+  showName,
+  onClick,
+}: GroupHoldingRowProps) {
+  const title = showName ? (group.underlyingName ?? group.underlyingSymbol) : group.underlyingSymbol;
+  const subtitle = `${group.memberCount} positions`;
+  const marketValue = group.marketValueBase;
+  const gainAmount = showTotalReturn ? group.totalGainBase : group.dayChangeBase;
+  const gainPercent = showTotalReturn ? (group.totalGainPct ?? 0) : (group.dayChangePct ?? 0);
+
+  return (
+    <div
+      className="border-border hover:bg-muted/30 group flex cursor-pointer items-center justify-between gap-3 border-b py-3 transition-colors last:border-0"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onClick?.()}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <TickerAvatar symbol={group.underlyingSymbol} className="size-9 shrink-0" />
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-semibold">{title}</span>
+          <span className="text-muted-foreground text-xs">{subtitle}</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <AmountDisplay
+          value={marketValue}
+          currency={baseCurrency}
+          isHidden={isHidden}
+          className="text-sm font-semibold"
+        />
+        <div className="flex items-center gap-2">
+          <GainAmount
+            value={gainAmount}
+            currency={baseCurrency}
+            displayCurrency={false}
+            className="text-xs"
+          />
+          <GainPercent
+            value={gainPercent}
+            variant="badge"
+            className="min-w-[60px] justify-center text-xs"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface StackedAvatarsProps {
-  holdings: Holding[];
+  holdings: HoldingRowItem[];
   totalRemaining: number;
   onClick?: () => void;
 }
@@ -122,9 +191,13 @@ function StackedAvatars({ holdings, totalRemaining, onClick }: StackedAvatarsPro
     >
       <div className="flex items-center">
         {displayedHoldings.map((holding, index) => {
-          const symbol = holding.instrument?.symbol ?? holding.id;
-          const parsed = parseOccSymbol(symbol);
-          const avatarSym = parsed ? parsed.underlying : symbol;
+          const avatarSym = isHoldingGroupRow(holding)
+            ? holding.underlyingSymbol
+            : (() => {
+                const s = holding.instrument?.symbol ?? holding.id;
+                const parsed = parseOccSymbol(s);
+                return parsed ? parsed.underlying : s;
+              })();
           return (
             <div
               key={holding.id}
@@ -203,31 +276,42 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     "holdings-widget-display-mode",
     "symbol",
   );
+  const [groupByUnderlying, setGroupByUnderlying] = usePersistentState<boolean>(
+    "dashboard-holdings-widget-group-by-underlying",
+    true,
+  );
 
-  // Filter out cash holdings and alternative assets, then sort by market value
+  // Filter out cash holdings and alternative assets, optionally group same-underlying
+  // positions into one summary row, then sort by market value or gain.
   // Dashboard shows only investment holdings (securities, crypto, etc.)
-  const sortedHoldings = useMemo(() => {
-    return holdings
-      .filter((h) => {
-        // Exclude cash holdings
-        if (h.holdingType === HoldingType.CASH) return false;
-        // Exclude alternative assets (properties, vehicles, liabilities, etc.)
-        if (h.assetKind && isAlternativeAssetKind(h.assetKind as AssetKind)) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === "gain") {
-          const gainA = showTotalReturn
-            ? (a.totalGain?.base ?? a.unrealizedGain?.base ?? 0)
-            : (a.dayChange?.base ?? 0);
-          const gainB = showTotalReturn
-            ? (b.totalGain?.base ?? b.unrealizedGain?.base ?? 0)
-            : (b.dayChange?.base ?? 0);
-          return gainB - gainA;
-        }
-        return (b.marketValue?.base ?? 0) - (a.marketValue?.base ?? 0);
-      });
-  }, [holdings, sortBy, showTotalReturn]);
+  const sortedHoldings = useMemo<HoldingRowItem[]>(() => {
+    const filtered = holdings.filter((h) => {
+      // Exclude cash holdings
+      if (h.holdingType === HoldingType.CASH) return false;
+      // Exclude alternative assets (properties, vehicles, liabilities, etc.)
+      if (h.assetKind && isAlternativeAssetKind(h.assetKind as AssetKind)) return false;
+      return true;
+    });
+
+    const base: HoldingRowItem[] = groupByUnderlying
+      ? groupHoldingsByUnderlying(filtered)
+      : filtered;
+
+    const valueOf = (it: HoldingRowItem) =>
+      isHoldingGroupRow(it) ? it.marketValueBase : (it.marketValue?.base ?? 0);
+    const gainOf = (it: HoldingRowItem) =>
+      isHoldingGroupRow(it)
+        ? showTotalReturn
+          ? it.totalGainBase
+          : it.dayChangeBase
+        : showTotalReturn
+          ? (it.totalGain?.base ?? it.unrealizedGain?.base ?? 0)
+          : (it.dayChange?.base ?? 0);
+
+    return [...base].sort((a, b) =>
+      sortBy === "gain" ? gainOf(b) - gainOf(a) : valueOf(b) - valueOf(a),
+    );
+  }, [holdings, sortBy, showTotalReturn, groupByUnderlying]);
 
   // Show one extra holding directly rather than displaying "+1 more"
   const displayCount =
@@ -266,6 +350,31 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
               align="end"
               className="border-border/50 bg-card min-w-[200px] rounded-2xl border p-2 shadow-lg backdrop-blur-xl"
             >
+              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+                Grouping
+              </p>
+              {([true, false] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  className="hover:bg-accent flex w-full items-center justify-between rounded-xl px-3 py-3 text-sm font-medium transition-colors"
+                  onClick={() => setGroupByUnderlying(v)}
+                >
+                  {v ? "Grouped" : "Flat"}
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-full border-2",
+                      groupByUnderlying === v
+                        ? "border-primary bg-primary"
+                        : "border-muted-foreground",
+                    )}
+                  >
+                    {groupByUnderlying === v && (
+                      <span className="bg-primary-foreground h-1.5 w-1.5 rounded-full" />
+                    )}
+                  </span>
+                </button>
+              ))}
+              <div className="bg-border/70 mx-2 my-1.5 h-px" />
               <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
                 Show
               </p>
@@ -350,12 +459,25 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
         </div>
       }
     >
-      {topHoldings.map((holding) => {
-        const assetId = holding.instrument?.id ?? holding.id;
+      {topHoldings.map((item) => {
+        if (isHoldingGroupRow(item)) {
+          return (
+            <GroupHoldingRow
+              key={item.id}
+              group={item}
+              baseCurrency={baseCurrency}
+              isHidden={isBalanceHidden}
+              showTotalReturn={showTotalReturn}
+              showName={displayMode === "name"}
+              onClick={() => navigate("/holdings")}
+            />
+          );
+        }
+        const assetId = item.instrument?.id ?? item.id;
         return (
           <HoldingRow
-            key={holding.id}
-            holding={holding}
+            key={item.id}
+            holding={item}
             baseCurrency={baseCurrency}
             isHidden={isBalanceHidden}
             showTotalReturn={showTotalReturn}
