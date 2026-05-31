@@ -192,6 +192,18 @@ function classifyStockPlusOne(
   return null;
 }
 
+/** Try long-stock + short-call(high) + long-put(low) -> collar. */
+function classifyCollar(
+  stock: LegFeature,
+  callLeg: LegFeature,
+  putLeg: LegFeature,
+): boolean {
+  if (!stock.isStock || !stock.isLong) return false;
+  if (!callLeg.isOption || callLeg.occ!.optionType !== "CALL" || !callLeg.isShort) return false;
+  if (!putLeg.isOption || putLeg.occ!.optionType !== "PUT" || !putLeg.isLong) return false;
+  return callLeg.occ!.strikePrice > putLeg.occ!.strikePrice;
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
@@ -224,6 +236,33 @@ export function detectStrategies(
         );
         break;
       }
+    }
+  }
+
+  // ---- collar: stock + short call(high) + long put(low) ----------------
+  for (let i = 0; i < pool.length; i++) {
+    if (consumed.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
+    const calls = pool.filter((f) => !consumed.has(f) && f.isOption && f.occ!.optionType === "CALL" && f.isShort);
+    const puts = pool.filter((f) => !consumed.has(f) && f.isOption && f.occ!.optionType === "PUT" && f.isLong);
+    let matched = false;
+    for (const c of calls) {
+      for (const p of puts) {
+        if (classifyCollar(pool[i], c, p)) {
+          consumed.add(pool[i]);
+          consumed.add(c);
+          consumed.add(p);
+          strategies.push(
+            buildStrategyRow(underlyingKey, "collar", defaultStrategyLabel("collar"), "auto", [
+              pool[i].holding,
+              c.holding,
+              p.holding,
+            ]),
+          );
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
     }
   }
 

@@ -269,4 +269,35 @@ describe("stock-based: covered-call / protective-put", () => {
   });
 });
 
+describe("stock-based: collar", () => {
+  it("collar: long stock + short call (high strike) + long put (low strike)", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1 });
+    const p = makeHolding({ id: "p", symbol: put(90, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([stock, c, p], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("collar");
+    expect(strategies[0].name).toBe("Collar");
+    expect(strategies[0].memberCount).toBe(3);
+  });
+
+  it("collar takes priority over covered-call (does not split into covered + loose put)", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1 });
+    const p = makeHolding({ id: "p", symbol: put(90, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([p, c, stock], NO_OVERRIDES);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("collar");
+  });
+
+  it("call strike below put strike is not a collar (-> covered-call + loose put or loose)", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(90, EXP_A), quantity: -1 });
+    const p = makeHolding({ id: "p", symbol: put(110, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([stock, c, p], NO_OVERRIDES);
+    expect(strategies.some((s) => s.strategyType === "collar")).toBe(false);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };
