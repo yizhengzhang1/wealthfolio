@@ -115,7 +115,22 @@ isStrategyGroupRow(r):   r.kind === 'strategy'
 // 叶子 Holding 无 kind。
 ```
 
-`name` 的默认标签由 `strategyType`(+ 方向)生成,例如 `vertical` + 多腿在低 strike → "牛市看涨价差"。标签映射表放 `detect-strategies.ts`。
+`name` 的默认标签由 `strategyType`(+ 方向)生成。**默认标签为英文**(应用 UI 为英文),由 `detect-strategies.ts` 中的 `defaultStrategyLabel(type)` 提供。垂直价差方向敏感(规则:多低 strike = Bull,多高 strike = Bear;类型取自腿的 optionType),例如 `vertical` + 多腿在低 strike 的 call → "Bull Call Spread"。规范映射表如下:
+
+| strategyType | 默认标签 |
+|---|---|
+| vertical | 方向敏感:Bull Call Spread / Bear Call Spread / Bull Put Spread / Bear Put Spread |
+| calendar | Calendar Spread |
+| diagonal | Diagonal Spread |
+| straddle | Straddle |
+| strangle | Strangle |
+| covered-call | Covered Call |
+| protective-put | Protective Put |
+| collar | Collar |
+| butterfly | Butterfly |
+| iron-condor | Iron Condor |
+| iron-butterfly | Iron Butterfly |
+| custom | Custom Strategy |
 
 ### 4.2 后端覆盖记录
 
