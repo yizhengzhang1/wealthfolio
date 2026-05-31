@@ -110,6 +110,7 @@ pub struct AppState {
     pub health_service: Arc<dyn HealthServiceTrait + Send + Sync>,
     pub token_lifecycle: Arc<TokenLifecycleState>,
     pub custom_provider_service: Arc<wealthfolio_core::custom_provider::CustomProviderService>,
+    pub option_strategy_service: Arc<wealthfolio_core::option_strategy::OptionStrategyService>,
     pub portfolio_service: Arc<dyn PortfolioServiceTrait + Send + Sync>,
     pub spending_settings_service: Arc<wealthfolio_spending::settings::SpendingSettingsService>,
     pub cash_activity_service: Arc<wealthfolio_spending::cash_activities::CashActivityService>,
@@ -359,6 +360,18 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         wealthfolio_core::custom_provider::CustomProviderService::new(
             custom_provider_repository.clone(),
             secret_store.clone(),
+        ),
+    );
+
+    let option_strategy_repository = Arc::new(
+        wealthfolio_storage_sqlite::option_strategy::OptionStrategySqliteRepository::new(
+            pool.clone(),
+            writer.clone(),
+        ),
+    );
+    let option_strategy_service = Arc::new(
+        wealthfolio_core::option_strategy::OptionStrategyService::new(
+            option_strategy_repository.clone(),
         ),
     );
 
@@ -793,6 +806,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         health_service,
         token_lifecycle,
         custom_provider_service,
+        option_strategy_service,
         portfolio_service,
         spending_settings_service,
         cash_activity_service,
