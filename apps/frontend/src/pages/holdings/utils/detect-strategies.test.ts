@@ -233,4 +233,40 @@ describe("two-leg: straddle / strangle", () => {
   });
 });
 
+describe("stock-based: covered-call / protective-put", () => {
+  it("covered call: long 100 shares + short 1 call", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies[0].strategyType).toBe("covered-call");
+    expect(strategies[0].name).toBe("Covered Call");
+    expect(strategies[0].memberCount).toBe(2);
+  });
+
+  it("not covered if shares < 100 * short-call contracts (-> loose)", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 50 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+
+  it("protective put: long stock + long put", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const p = makeHolding({ id: "p", symbol: put(90, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([stock, p], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("protective-put");
+    expect(strategies[0].name).toBe("Protective Put");
+  });
+
+  it("long stock + long call is not covered/protective (-> loose)", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

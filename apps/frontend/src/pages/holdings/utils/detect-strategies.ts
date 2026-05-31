@@ -175,6 +175,23 @@ function classifyStraddleFamily(
     : { type: "strangle", name: defaultStrategyLabel("strangle") };
 }
 
+/** Try long-stock + 1 option -> covered-call / protective-put. */
+function classifyStockPlusOne(
+  stock: LegFeature,
+  opt: LegFeature,
+): { type: StrategyType; name: string } | null {
+  if (!stock.isStock || !stock.isLong || !opt.isOption) return null;
+  const sharesPerContract = opt.multiplier; // 100 by default
+  const requiredShares = sharesPerContract * Math.abs(opt.quantity);
+  if (opt.occ!.optionType === "CALL" && opt.isShort && stock.quantity >= requiredShares) {
+    return { type: "covered-call", name: defaultStrategyLabel("covered-call") };
+  }
+  if (opt.occ!.optionType === "PUT" && opt.isLong) {
+    return { type: "protective-put", name: defaultStrategyLabel("protective-put") };
+  }
+  return null;
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
@@ -204,6 +221,26 @@ export function detectStrategies(
             "auto",
             [pool[i].holding, pool[j].holding],
           ),
+        );
+        break;
+      }
+    }
+  }
+
+  // ---- stock + 1 option: covered-call / protective-put ----------------
+  for (let i = 0; i < pool.length; i++) {
+    if (consumed.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
+    for (let j = 0; j < pool.length; j++) {
+      if (j === i || consumed.has(pool[j]) || !pool[j].isOption) continue;
+      const hit = classifyStockPlusOne(pool[i], pool[j]);
+      if (hit) {
+        consumed.add(pool[i]);
+        consumed.add(pool[j]);
+        strategies.push(
+          buildStrategyRow(underlyingKey, hit.type, hit.name, "auto", [
+            pool[i].holding,
+            pool[j].holding,
+          ]),
         );
         break;
       }
