@@ -58,5 +58,6 @@ describe("DataTable opt-in sub-rows", () => {
     render(<DataTable data={data} columns={columns} />);
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 });

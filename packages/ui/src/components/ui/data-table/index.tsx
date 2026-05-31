@@ -71,16 +71,17 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = storageKey
     ? usePersistentState<SortingState>(`${storageKey}:sorting`, defaultSorting || [])
     : React.useState<SortingState>(defaultSorting || []);
-  const [expanded, setExpanded] = storageKey
-    ? usePersistentState<ExpandedState>(`${storageKey}:expanded`, defaultExpanded ?? {})
-    : React.useState<ExpandedState>(defaultExpanded ?? {});
+  const expandedDefault = defaultExpanded ?? {};
+  const [expanded, setExpanded] = storageKey && getSubRows
+    ? usePersistentState<ExpandedState>(`${storageKey}:expanded`, expandedDefault)
+    : React.useState<ExpandedState>(expandedDefault);
 
   const table = useReactTable({
     data,
     columns,
     manualPagination: true,
     getSubRows,
-    filterFromLeafRows,
+    ...(getSubRows ? { filterFromLeafRows } : {}),
     state: {
       sorting,
       columnVisibility,
