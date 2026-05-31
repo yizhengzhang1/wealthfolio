@@ -12,7 +12,8 @@ import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { groupHoldingsByUnderlying, isHoldingGroupRow, type HoldingRow } from "../utils/group-by-underlying";
-import { isStrategyGroupRow } from "../utils/detect-strategies";
+import { isStrategyGroupRow, type StrategyGroupRow } from "../utils/detect-strategies";
+import { useOptionStrategies } from "@/hooks/use-option-strategies";
 import { HoldingsMobileFilterSheet } from "./holdings-mobile-filter-sheet";
 
 interface HoldingsTableMobileProps {
@@ -74,6 +75,24 @@ export const HoldingsTableMobile = ({
   const toggleExpand = (key: string) =>
     setExpandedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
+  const [groupByStrategy, setGroupByStrategy] = usePersistentState<boolean>(
+    "holdings-mobile:group-by-strategy",
+    true,
+  );
+  const [expandedStrategies, setExpandedStrategies] = usePersistentState<string[]>(
+    "holdings-mobile:expanded-strategies",
+    [],
+  );
+  const toggleStrategy = (id: string) =>
+    setExpandedStrategies((prev) =>
+      prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id],
+    );
+  const accountIds = useMemo(
+    () => Array.from(new Set(holdings.map((h) => h.accountId).filter(Boolean) as string[])),
+    [holdings],
+  );
+  const { data: overrides = [] } = useOptionStrategies(accountIds);
+
   const hasActiveFilters = useMemo(() => {
     const hasAccountScope = showAccountScope && accountFilter.type !== "all";
     const hasTypeFilter = selectedTypes.length > 0;
@@ -124,7 +143,7 @@ export const HoldingsTableMobile = ({
 
   const rows: HoldingRow[] = useMemo(() => {
     if (!groupByUnderlying) return filteredHoldings;
-    const grouped = groupHoldingsByUnderlying(filteredHoldings);
+    const grouped = groupHoldingsByUnderlying(filteredHoldings, { groupByStrategy, overrides });
     const marketValueOf = (r: HoldingRow) =>
       isHoldingGroupRow(r) || isStrategyGroupRow(r) ? r.marketValueBase : (r.marketValue?.base ?? 0);
     const symbolOf = (r: HoldingRow) =>
@@ -142,14 +161,14 @@ export const HoldingsTableMobile = ({
     for (const r of sorted) {
       if (isHoldingGroupRow(r)) {
         r.subRows.sort((x, y) => {
-          const sx = isStrategyGroupRow(x) ? x.name : (x.instrument?.symbol ?? x.id);
-          const sy = isStrategyGroupRow(y) ? y.name : (y.instrument?.symbol ?? y.id);
+          const sx = isStrategyGroupRow(x) ? x.name : x.instrument?.symbol ?? x.id;
+          const sy = isStrategyGroupRow(y) ? y.name : y.instrument?.symbol ?? y.id;
           return sx.localeCompare(sy);
         });
       }
     }
     return sorted;
-  }, [filteredHoldings, groupByUnderlying, sortBy]);
+  }, [filteredHoldings, groupByUnderlying, sortBy, groupByStrategy, overrides]);
 
   const handleNavigate = (holding: Holding) => {
     // Use instrument.id (asset ID) for navigation, not symbol (which may be stripped)
@@ -216,6 +235,64 @@ export const HoldingsTableMobile = ({
           </div>
         </div>
       </Card>
+    );
+  };
+
+  const renderStrategyCard = (strategy: StrategyGroupRow) => {
+    const expanded = expandedStrategies.includes(strategy.id);
+    return (
+      <div key={strategy.id} className="space-y-2">
+        <Card
+          className="hover:bg-muted/50 cursor-pointer p-3 transition-colors"
+          onClick={() => toggleStrategy(strategy.id)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex flex-1 items-center gap-2 overflow-hidden">
+              <Icons.ChevronRight
+                className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")}
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate font-semibold">{strategy.name}</p>
+                  <Badge variant="secondary">{strategy.memberCount}</Badge>
+                </div>
+                <p className="text-muted-foreground truncate text-sm">
+                  {strategy.netCashBase >= 0
+                    ? `Net debit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`
+                    : `Net credit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`}
+                </p>
+              </div>
+            </div>
+            <div className="ml-2 text-right">
+              <AmountDisplay
+                value={strategy.marketValueBase}
+                currency={strategy.baseCurrency}
+                isHidden={isBalanceHidden}
+                className="font-medium"
+              />
+              <div className="flex items-center justify-end gap-1">
+                <AmountDisplay
+                  value={showTotalReturn ? strategy.totalGainBase : strategy.dayChangeBase}
+                  currency={strategy.baseCurrency}
+                  isHidden={isBalanceHidden}
+                  colorFormat
+                  className="text-xs"
+                />
+                <Separator orientation="vertical" className="mx-1 h-4" />
+                <GainPercent
+                  value={(showTotalReturn ? strategy.totalGainPct : strategy.dayChangePct) ?? 0}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        </Card>
+        {expanded && (
+          <div className="ml-4 space-y-2 border-l pl-2">
+            {strategy.subRows.map((leg) => renderLeafCard(leg))}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -315,9 +392,11 @@ export const HoldingsTableMobile = ({
                   </Card>
                   {expanded && (
                     <div className="ml-4 space-y-2 border-l pl-2">
-                      {row.subRows
-                        .filter((leg): leg is Holding => !isStrategyGroupRow(leg))
-                        .map((leg) => renderLeafCard(leg))}
+                      {row.subRows.map((sub) =>
+                        isStrategyGroupRow(sub)
+                          ? renderStrategyCard(sub)
+                          : renderLeafCard(sub),
+                      )}
                     </div>
                   )}
                 </div>
@@ -355,6 +434,8 @@ export const HoldingsTableMobile = ({
         setShowTotalReturn={setShowTotalReturn}
         groupByUnderlying={groupByUnderlying}
         setGroupByUnderlying={setGroupByUnderlying}
+        groupByStrategy={groupByStrategy}
+        setGroupByStrategy={setGroupByStrategy}
         typeOptions={typeOptions}
       />
     </div>

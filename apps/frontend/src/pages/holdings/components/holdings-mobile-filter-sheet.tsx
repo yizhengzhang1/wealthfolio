@@ -29,6 +29,8 @@ interface HoldingsMobileFilterSheetProps {
   setShowTotalReturn: (value: boolean) => void;
   groupByUnderlying?: boolean;
   setGroupByUnderlying?: (value: boolean) => void;
+  groupByStrategy?: boolean;
+  setGroupByStrategy?: (value: boolean) => void;
   categoryFilter?: HoldingCategoryFilterId;
   setCategoryFilter?: (value: HoldingCategoryFilterId) => void;
   typeOptions?: { value: string; label: string }[];
@@ -50,6 +52,8 @@ export const HoldingsMobileFilterSheet = ({
   setShowTotalReturn,
   groupByUnderlying = true,
   setGroupByUnderlying,
+  groupByStrategy = true,
+  setGroupByStrategy,
   categoryFilter = "investments",
   setCategoryFilter,
   typeOptions,
@@ -78,6 +82,24 @@ export const HoldingsMobileFilterSheet = ({
                     items={[
                       { value: "grouped", label: "Grouped" },
                       { value: "flat", label: "Flat" },
+                    ]}
+                    size="sm"
+                    className="inline-flex w-auto"
+                  />
+                </div>
+              )}
+
+              {setGroupByStrategy && (
+                <div className="space-y-3">
+                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                    Strategy sub-grouping
+                  </h4>
+                  <AnimatedToggleGroup
+                    value={groupByStrategy ? "strategy" : "legs"}
+                    onValueChange={(value) => setGroupByStrategy(value === "strategy")}
+                    items={[
+                      { value: "strategy", label: "Strategy" },
+                      { value: "legs", label: "Legs" },
                     ]}
                     size="sm"
                     className="inline-flex w-auto"

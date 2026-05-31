@@ -17,6 +17,10 @@ vi.mock("./holdings-mobile-filter-sheet", () => ({
   HoldingsMobileFilterSheet: () => null,
 }));
 // Stub @wealthfolio/ui root exports used by the mobile table.
+vi.mock("@/hooks/use-option-strategies", () => ({
+  useOptionStrategies: () => ({ data: [] }),
+}));
+
 vi.mock("@wealthfolio/ui", () => ({
   AmountDisplay: ({ value }: { value: number }) => <span>{value}</span>,
   GainPercent: ({ value }: { value: number }) => <span>{value}</span>,
@@ -86,6 +90,32 @@ function renderMobile(holdings: Holding[]) {
   );
 }
 
+const VERT_LONG = makeHolding({ id: "vl", symbol: "ASTS260612C00100000", mv: 250 });
+const VERT_SHORT = (() => {
+  const h = makeHolding({ id: "vs", symbol: "ASTS260612C00110000", mv: -80 });
+  return { ...h, quantity: -1 } as Holding;
+})();
+
+describe("HoldingsTableMobile strategy sub-grouping", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("shows a strategy sub-card with name and legs when expanded", async () => {
+    renderMobile([VERT_LONG, VERT_SHORT]);
+    // Expand the underlying group, then the strategy.
+    await userEvent.click(screen.getByText(labelMatcher("ASTS")));
+    expect(screen.getByText(/Spread/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByText(/Spread/i));
+    expect(screen.getAllByText(/CALL/).length).toBeGreaterThan(0);
+  });
+
+  it("flattens legs when strategy sub-grouping is disabled (persisted)", () => {
+    window.localStorage.setItem("holdings-mobile:group-by-strategy", "false");
+    renderMobile([VERT_LONG, VERT_SHORT]);
+    // No strategy label; legs hidden until underlying expanded (collapsed default).
+    expect(screen.queryByText(/Spread/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("HoldingsTableMobile grouping", () => {
   beforeEach(() => window.localStorage.clear());
 
@@ -101,6 +131,7 @@ describe("HoldingsTableMobile grouping", () => {
   });
 
   it("expands a group on tap to reveal legs", async () => {
+    window.localStorage.setItem("holdings-mobile:group-by-strategy", "false");
     renderMobile([ASTS_C, ASTS_P]);
     await userEvent.click(screen.getByText(labelMatcher("ASTS")));
     expect(screen.getByText(/CALL/)).toBeInTheDocument();
