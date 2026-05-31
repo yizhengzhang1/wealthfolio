@@ -60,6 +60,64 @@ export function extractFeature(h: Holding, underlyingKey: string): LegFeature {
   };
 }
 
+/** Build the sorted leg key: leg OCC/symbols sorted then join('|'). */
+function legKeyOf(legs: Holding[]): string {
+  return legs
+    .map((h) => h.instrument?.symbol ?? h.id)
+    .sort()
+    .join("|");
+}
+
+/**
+ * Aggregate a set of legs into a StrategyGroupRow (spec section 7).
+ * Base-currency sums; pct = sum / |denom|, null when denom is 0;
+ * netCashBase = Σ costBasisBase.
+ */
+export function buildStrategyRow(
+  underlyingKey: string,
+  strategyType: StrategyType,
+  name: string,
+  source: "auto" | "override",
+  legs: Holding[],
+  overrideId?: string,
+): StrategyGroupRow {
+  let marketValueBase = 0;
+  let costBasisBase = 0;
+  let totalGainBase = 0;
+  let dayChangeBase = 0;
+  let prevCloseBase = 0;
+  let weight = 0;
+  for (const h of legs) {
+    marketValueBase += h.marketValue?.base ?? 0;
+    costBasisBase += h.costBasis?.base ?? 0;
+    totalGainBase += h.totalGain?.base ?? 0;
+    dayChangeBase += h.dayChange?.base ?? 0;
+    prevCloseBase += h.prevCloseValue?.base ?? 0;
+    weight += h.weight ?? 0;
+  }
+
+  return {
+    kind: "strategy",
+    id: `strategy:${underlyingKey}:${legKeyOf(legs)}`,
+    underlyingKey,
+    strategyType,
+    name,
+    source,
+    overrideId,
+    memberCount: legs.length,
+    baseCurrency: legs[0].baseCurrency,
+    marketValueBase,
+    costBasisBase,
+    totalGainBase,
+    totalGainPct: costBasisBase !== 0 ? totalGainBase / Math.abs(costBasisBase) : null,
+    dayChangeBase,
+    dayChangePct: prevCloseBase !== 0 ? dayChangeBase / Math.abs(prevCloseBase) : null,
+    weight,
+    netCashBase: costBasisBase,
+    subRows: legs,
+  };
+}
+
 /** Derive the underlying key from the first parseable OCC leg, else the first symbol. */
 function deriveUnderlyingKey(legs: Holding[]): string {
   for (const h of legs) {

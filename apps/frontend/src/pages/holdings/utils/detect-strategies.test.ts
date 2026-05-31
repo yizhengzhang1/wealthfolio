@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Holding, StrategyOverride } from "@/lib/types";
 import { buildOccSymbol } from "@/lib/occ-symbol";
-import { detectStrategies } from "./detect-strategies";
+import { buildStrategyRow, detectStrategies } from "./detect-strategies";
 
 // Minimal Holding factory (extends the P1 group-by-underlying factory with the
 // fields detection needs: quantity sign, accountId, contractMultiplier).
@@ -67,6 +67,71 @@ describe("detectStrategies — baseline", () => {
     const result = detectStrategies([leg], NO_OVERRIDES);
     expect(result.strategies).toHaveLength(0);
     expect(result.looseLegs).toEqual([leg]);
+  });
+});
+
+describe("buildStrategyRow", () => {
+  it("aggregates base-currency sums, netCashBase, sorted legKey id, and pct", () => {
+    const c1 = makeHolding({
+      id: "c1",
+      symbol: call(110),
+      quantity: -1,
+      mv: -1264.56,
+      cost: 313,
+      gain: -300,
+      day: 2,
+      prevClose: -1266.56,
+      weight: -0.3,
+    });
+    const c2 = makeHolding({
+      id: "c2",
+      symbol: call(100),
+      quantity: 1,
+      mv: 2028.15,
+      cost: 578,
+      gain: 1450,
+      day: 3,
+      prevClose: 2025.15,
+      weight: 0.5,
+    });
+    const row = buildStrategyRow("ASTS", "vertical", "Bull Call Spread", "auto", [c2, c1]);
+    expect(row.kind).toBe("strategy");
+    expect(row.underlyingKey).toBe("ASTS");
+    expect(row.strategyType).toBe("vertical");
+    expect(row.name).toBe("Bull Call Spread");
+    expect(row.source).toBe("auto");
+    expect(row.overrideId).toBeUndefined();
+    expect(row.memberCount).toBe(2);
+    expect(row.baseCurrency).toBe("USD");
+    expect(row.marketValueBase).toBeCloseTo(-1264.56 + 2028.15, 2);
+    expect(row.costBasisBase).toBeCloseTo(313 + 578, 2);
+    expect(row.totalGainBase).toBeCloseTo(-300 + 1450, 2);
+    expect(row.dayChangeBase).toBeCloseTo(2 + 3, 2);
+    expect(row.weight).toBeCloseTo(-0.3 + 0.5, 4);
+    expect(row.netCashBase).toBeCloseTo(313 + 578, 2);
+    expect(row.totalGainPct).toBeCloseTo((-300 + 1450) / Math.abs(313 + 578), 6);
+    expect(row.dayChangePct).toBeCloseTo((2 + 3) / Math.abs(-1266.56 + 2025.15), 6);
+    // id = strategy:ASTS:<sorted leg symbols join '|'>
+    const sorted = [call(110), call(100)].sort().join("|");
+    expect(row.id).toBe(`strategy:ASTS:${sorted}`);
+    // legs preserved in the passed order
+    expect(row.subRows).toEqual([c2, c1]);
+  });
+
+  it("returns null pct when cost basis / prevClose sums are zero", () => {
+    const a = makeHolding({ id: "a", symbol: call(100), quantity: 1, cost: 0, prevClose: 0 });
+    const b = makeHolding({ id: "b", symbol: call(110), quantity: -1, cost: 0, prevClose: 0 });
+    const row = buildStrategyRow("ASTS", "vertical", "X", "auto", [a, b]);
+    expect(row.totalGainPct).toBeNull();
+    expect(row.dayChangePct).toBeNull();
+  });
+
+  it("sets source='override' with overrideId when provided", () => {
+    const a = makeHolding({ id: "a", symbol: call(100), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: call(110), quantity: -1 });
+    const row = buildStrategyRow("ASTS", "vertical", "X", "override", [a, b], "ovr-9");
+    expect(row.source).toBe("override");
+    expect(row.overrideId).toBe("ovr-9");
   });
 });
 
