@@ -18,6 +18,7 @@ pub mod goals;
 pub mod health;
 pub mod limits;
 pub mod lots;
+pub mod option_strategy;
 pub mod planning;
 pub mod portfolio;
 pub mod portfolios;
