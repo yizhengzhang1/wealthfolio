@@ -338,6 +338,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    option_strategy_overrides (id) {
+        id -> Text,
+        account_id -> Text,
+        underlying -> Text,
+        name -> Nullable<Text>,
+        strategy_type -> Nullable<Text>,
+        legs -> Text,
+        mode -> Text,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     snapshot_positions (id) {
         id -> Integer,
         snapshot_id -> Text,
@@ -775,6 +789,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     import_runs,
     lots,
     market_data_providers,
+    option_strategy_overrides,
     platforms,
     quote_sync_state,
     quotes,
