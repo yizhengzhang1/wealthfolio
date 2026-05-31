@@ -91,6 +91,9 @@ export * from "../shared/market-data";
 // Custom Provider Commands
 export * from "../shared/custom-provider";
 
+// Option Strategy Override Commands
+export * from "../shared/option-strategy";
+
 // Goal Commands
 export * from "../shared/goals";
 

@@ -129,6 +129,11 @@ export const COMMANDS: CommandMap = {
   update_custom_provider: { method: "PUT", path: "/custom-providers" },
   delete_custom_provider: { method: "DELETE", path: "/custom-providers" },
   test_custom_provider_source: { method: "POST", path: "/custom-providers/test-source" },
+  // Option strategy overrides
+  get_option_strategy_overrides: { method: "GET", path: "/option-strategy-overrides" },
+  create_option_strategy_override: { method: "POST", path: "/option-strategy-overrides" },
+  update_option_strategy_override: { method: "PUT", path: "/option-strategy-overrides" },
+  delete_option_strategy_override: { method: "DELETE", path: "/option-strategy-overrides" },
   // Contribution limits
   get_contribution_limits: { method: "GET", path: "/limits" },
   create_contribution_limit: { method: "POST", path: "/limits" },
@@ -877,6 +882,34 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     case "test_custom_provider_source": {
       const { payload: tp } = payload as { payload: Record<string, unknown> };
       body = JSON.stringify(tp);
+      break;
+    }
+    case "get_option_strategy_overrides": {
+      const { accountIds } = (payload ?? {}) as { accountIds?: string[] };
+      if (accountIds && accountIds.length > 0) {
+        const params = new URLSearchParams();
+        for (const id of accountIds) params.append("accountIds", id);
+        url += `?${params.toString()}`;
+      }
+      break;
+    }
+    case "create_option_strategy_override": {
+      const { payload: op } = payload as { payload: Record<string, unknown> };
+      body = JSON.stringify(op);
+      break;
+    }
+    case "update_option_strategy_override": {
+      const { id, payload: op } = payload as {
+        id: string;
+        payload: Record<string, unknown>;
+      };
+      url += `/${encodeURIComponent(id)}`;
+      body = JSON.stringify(op);
+      break;
+    }
+    case "delete_option_strategy_override": {
+      const { id } = payload as { id: string };
+      url += `/${encodeURIComponent(id)}`;
       break;
     }
     case "create_contribution_limit": {

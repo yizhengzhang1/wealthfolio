@@ -205,6 +205,14 @@ export {
   testCustomProviderSource,
 } from "../shared/custom-provider";
 
+// Option Strategy Override Commands
+export {
+  getOptionStrategyOverrides,
+  createOptionStrategyOverride,
+  updateOptionStrategyOverride,
+  deleteOptionStrategyOverride,
+} from "../shared/option-strategy";
+
 // Contribution Limits Commands
 export {
   calculateDepositsForLimit,
