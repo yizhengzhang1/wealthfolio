@@ -2375,3 +2375,46 @@ export interface UpdateStrategyOverride {
   legs?: string[];
   mode?: "group" | "exclude";
 }
+
+// ---------------------------------------------------------------------------
+// Option strategy grouping (P2)
+// ---------------------------------------------------------------------------
+
+// NOTE: `StrategyType` (the 12-value union) is declared by Plan 1 in this same
+// file. Do NOT re-declare it here; the interface below references it directly.
+
+/**
+ * Strategy group: a set of legs (option + optional stock) for one underlying
+ * within one account, with combined base-currency aggregates. Mirrors the
+ * aggregation primitives of the P1 underlying group row.
+ */
+export interface StrategyGroupRow {
+  kind: "strategy";
+  /** `strategy:${underlyingKey}:${legKey}`; legKey = leg OCC symbols sorted then join('|'). */
+  id: string;
+  underlyingKey: string;
+  strategyType: StrategyType;
+  /** Display name: user override name > default label for the strategyType. */
+  name: string;
+  /** 'auto' = live auto-detection; 'override' = from a saved StrategyOverride. */
+  source: "auto" | "override";
+  /** Set when source === 'override'. */
+  overrideId?: string;
+  memberCount: number;
+  baseCurrency: string;
+  marketValueBase: number;
+  costBasisBase: number;
+  totalGainBase: number;
+  totalGainPct: number | null;
+  dayChangeBase: number;
+  dayChangePct: number | null;
+  weight: number;
+  /** Σ costBasisBase; > 0 = net debit (净付), < 0 = net credit (净收). */
+  netCashBase: number;
+  /** The legs of this strategy. */
+  subRows: Holding[];
+}
+
+export function isStrategyGroupRow(row: { kind?: string }): row is StrategyGroupRow {
+  return row.kind === "strategy";
+}
