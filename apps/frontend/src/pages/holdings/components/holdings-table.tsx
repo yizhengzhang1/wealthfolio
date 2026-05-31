@@ -29,6 +29,10 @@ import {
   isHoldingGroupRow,
   type HoldingRow,
 } from "../utils/group-by-underlying";
+import {
+  isStrategyGroupRow,
+} from "../utils/detect-strategies";
+import { useOptionStrategies } from "@/hooks/use-option-strategies";
 
 // Helper function to get display value and currency based on toggle state
 const getDisplayValueAndCurrency = (
@@ -77,6 +81,14 @@ export const HoldingsTable = ({
     "holdings-table:group-by-underlying",
     true,
   );
+  const [groupByStrategy, setGroupByStrategy] = usePersistentState<boolean>(
+    "holdings-table:group-by-strategy",
+    true,
+  );
+  const accountIds = Array.from(
+    new Set(holdings.map((h) => h.accountId).filter(Boolean)),
+  );
+  const { data: overrides = [] } = useOptionStrategies(accountIds);
 
   const baseCurrency = settings?.baseCurrency ?? holdings[0]?.baseCurrency;
   const hasMultipleCurrencies = holdings.some((holding) => {
@@ -121,7 +133,7 @@ export const HoldingsTable = ({
   ];
 
   const tableData: HoldingRow[] = groupByUnderlying
-    ? groupHoldingsByUnderlying(holdings)
+    ? groupHoldingsByUnderlying(holdings, { groupByStrategy, overrides })
     : holdings;
 
   return (
@@ -133,7 +145,13 @@ export const HoldingsTable = ({
         filters={filters}
         showColumnToggle={true}
         storageKey="holdings-table"
-        getSubRows={(row) => (isHoldingGroupRow(row) ? row.subRows : undefined)}
+        getSubRows={(row) =>
+          isHoldingGroupRow(row)
+            ? row.subRows
+            : isStrategyGroupRow(row)
+              ? row.subRows
+              : undefined
+        }
         defaultExpanded={true}
         filterFromLeafRows={true}
         defaultColumnVisibility={{
@@ -156,6 +174,18 @@ export const HoldingsTable = ({
               size="xs"
               rounded="md"
             />
+            {groupByUnderlying && (
+              <AnimatedToggleGroup
+                value={groupByStrategy ? "strategy" : "legs"}
+                onValueChange={(value) => setGroupByStrategy(value === "strategy")}
+                items={[
+                  { value: "strategy", label: "Strategy" },
+                  { value: "legs", label: "Legs" },
+                ]}
+                size="xs"
+                rounded="md"
+              />
+            )}
             {setShowTotalReturn && (
               <AnimatedToggleGroup
                 value={showTotalReturn ? "total" : "daily"}
@@ -207,7 +237,11 @@ const getColumns = (
   {
     id: "symbol",
     accessorFn: (row) =>
-      isHoldingGroupRow(row) ? row.underlyingSymbol : row.instrument?.symbol ?? row.id,
+      isHoldingGroupRow(row)
+        ? row.underlyingSymbol
+        : isStrategyGroupRow(row)
+          ? row.name
+          : row.instrument?.symbol ?? row.id,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Position" />,
     meta: {
       label: "Position",
@@ -215,6 +249,36 @@ const getColumns = (
     cell: ({ row }) => {
       const navigate = useNavigate();
       const data = row.original;
+
+      if (isStrategyGroupRow(data)) {
+        return (
+          <button
+            type="button"
+            className="-m-1 flex w-full items-center p-1 text-left"
+            style={{ paddingLeft: `${row.depth * 1.5}rem` }}
+            onClick={row.getToggleExpandedHandler()}
+          >
+            {row.getIsExpanded() ? (
+              <Icons.ChevronDown className="mr-1 h-4 w-4 shrink-0" />
+            ) : (
+              <Icons.ChevronRight className="mr-1 h-4 w-4 shrink-0" />
+            )}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium">{data.name}</span>
+                <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
+                  {data.memberCount}
+                </Badge>
+              </div>
+              <span className="text-muted-foreground line-clamp-1 text-xs">
+                {data.netCashBase >= 0
+                  ? `Net debit ${data.baseCurrency} ${Math.abs(data.netCashBase).toFixed(2)}`
+                  : `Net credit ${data.baseCurrency} ${Math.abs(data.netCashBase).toFixed(2)}`}
+              </span>
+            </div>
+          </button>
+        );
+      }
 
       if (isHoldingGroupRow(data)) {
         return (
@@ -290,9 +354,13 @@ const getColumns = (
     sortingFn: (rowA, rowB) => {
       const a = rowA.original;
       const b = rowB.original;
-      const symbolA = isHoldingGroupRow(a) ? a.underlyingSymbol : a.instrument?.symbol ?? a.id;
-      const symbolB = isHoldingGroupRow(b) ? b.underlyingSymbol : b.instrument?.symbol ?? b.id;
-      return symbolA.localeCompare(symbolB);
+      const labelOf = (r: HoldingRow) =>
+        isHoldingGroupRow(r)
+          ? r.underlyingSymbol
+          : isStrategyGroupRow(r)
+            ? r.name
+            : r.instrument?.symbol ?? r.id;
+      return labelOf(a).localeCompare(labelOf(b));
     },
     filterFn: (row, _columnId, filterValue) => {
       const data = row.original;
@@ -302,6 +370,9 @@ const getColumns = (
           data.underlyingSymbol.toLowerCase().includes(lowerSearch) ||
           (data.underlyingName?.toLowerCase().includes(lowerSearch) ?? false)
         );
+      }
+      if (isStrategyGroupRow(data)) {
+        return data.name.toLowerCase().includes(lowerSearch);
       }
       const holding = data;
       const nameMatch = holding.instrument?.name?.toLowerCase().includes(lowerSearch);
@@ -316,7 +387,11 @@ const getColumns = (
   {
     id: "symbolName",
     accessorFn: (row) =>
-      isHoldingGroupRow(row) ? row.underlyingName ?? row.underlyingSymbol : row.instrument?.name || row.id,
+      isHoldingGroupRow(row)
+        ? row.underlyingName ?? row.underlyingSymbol
+        : isStrategyGroupRow(row)
+          ? row.name
+          : row.instrument?.name || row.id,
     meta: {
       label: "Symbol Name",
     },
@@ -324,7 +399,7 @@ const getColumns = (
   },
   {
     id: "quantity",
-    accessorFn: (row) => (isHoldingGroupRow(row) ? 0 : row.quantity),
+    accessorFn: (row) => (isHoldingGroupRow(row) || isStrategyGroupRow(row) ? 0 : row.quantity),
     enableHiding: true,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end text-right" column={column} title="Qty" />
@@ -334,7 +409,7 @@ const getColumns = (
     },
     cell: ({ row }) => {
       const data = row.original;
-      if (isHoldingGroupRow(data)) {
+      if (isHoldingGroupRow(data) || isStrategyGroupRow(data)) {
         return <div className="min-h-[40px] px-4" />;
       }
       const symbol = data.instrument?.symbol ?? data.id;
@@ -356,7 +431,12 @@ const getColumns = (
   },
   {
     id: "marketPrice",
-    accessorFn: (row) => (isHoldingGroupRow(row) ? row.underlyingPrice ?? 0 : row.price ?? 0),
+    accessorFn: (row) =>
+      isHoldingGroupRow(row)
+        ? row.underlyingPrice ?? 0
+        : isStrategyGroupRow(row)
+          ? 0
+          : row.price ?? 0,
     enableHiding: true,
     enableSorting: true,
     header: ({ column }) => (
@@ -371,6 +451,9 @@ const getColumns = (
     },
     cell: ({ row }) => {
       const data = row.original;
+      if (isStrategyGroupRow(data)) {
+        return <div className="min-h-[40px] px-4" />;
+      }
       if (isHoldingGroupRow(data)) {
         if (data.underlyingPrice == null) {
           return <div className="min-h-[40px] px-4" />;
@@ -394,7 +477,12 @@ const getColumns = (
   },
   {
     id: "bookValue",
-    accessorFn: (row) => (isHoldingGroupRow(row) ? row.costBasisBase : row.costBasis?.local ?? 0),
+    accessorFn: (row) =>
+      isHoldingGroupRow(row)
+        ? row.costBasisBase
+        : isStrategyGroupRow(row)
+          ? row.costBasisBase
+          : row.costBasis?.local ?? 0,
     enableHiding: true,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end" column={column} title="Book Cost" />
@@ -404,6 +492,14 @@ const getColumns = (
     },
     cell: ({ row }) => {
       const data = row.original;
+      if (isStrategyGroupRow(data)) {
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={data.costBasisBase} currency={data.baseCurrency} isHidden={isHidden} />
+            <div className="text-xs text-transparent">-</div>
+          </div>
+        );
+      }
       if (isHoldingGroupRow(data)) {
         return (
           <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
@@ -424,7 +520,12 @@ const getColumns = (
   },
   {
     id: "marketValue",
-    accessorFn: (row) => (isHoldingGroupRow(row) ? row.marketValueBase : row.marketValue.base ?? 0),
+    accessorFn: (row) =>
+      isHoldingGroupRow(row)
+        ? row.marketValueBase
+        : isStrategyGroupRow(row)
+          ? row.marketValueBase
+          : row.marketValue.base ?? 0,
     enableHiding: false,
     header: ({ column }) => (
       <DataTableColumnHeader className="justify-end" column={column} title="Total Value" />
@@ -434,6 +535,14 @@ const getColumns = (
     },
     cell: ({ row }) => {
       const data = row.original;
+      if (isStrategyGroupRow(data)) {
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={data.marketValueBase} currency={data.baseCurrency} isHidden={isHidden} />
+            <div className="text-muted-foreground text-xs">{data.baseCurrency}</div>
+          </div>
+        );
+      }
       if (isHoldingGroupRow(data)) {
         return (
           <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
@@ -458,7 +567,7 @@ const getColumns = (
   {
     id: "performance",
     accessorFn: (row) =>
-      isHoldingGroupRow(row)
+      isHoldingGroupRow(row) || isStrategyGroupRow(row)
         ? (showTotalReturn ? row.totalGainBase : row.dayChangeBase)
         : (showTotalReturn ? row.totalGain?.base : row.dayChange?.base) ?? 0,
     enableHiding: false,
@@ -474,6 +583,16 @@ const getColumns = (
     },
     cell: ({ row }) => {
       const data = row.original;
+      if (isStrategyGroupRow(data)) {
+        const value = showTotalReturn ? data.totalGainBase : data.dayChangeBase;
+        const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
+        return (
+          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+            <AmountDisplay value={value} currency={data.baseCurrency} colorFormat={true} isHidden={isHidden} />
+            <GainPercent className="text-xs" value={pct || 0} />
+          </div>
+        );
+      }
       if (isHoldingGroupRow(data)) {
         const value = showTotalReturn ? data.totalGainBase : data.dayChangeBase;
         const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
@@ -498,7 +617,9 @@ const getColumns = (
   {
     id: "holdingType",
     accessorFn: (row) =>
-      isHoldingGroupRow(row) ? undefined : row.instrument?.classifications?.assetType?.name,
+      isHoldingGroupRow(row) || isStrategyGroupRow(row)
+        ? undefined
+        : row.instrument?.classifications?.assetType?.name,
     meta: {
       label: "Asset Type",
     },
@@ -507,14 +628,15 @@ const getColumns = (
   },
   {
     id: "currency",
-    accessorFn: (row) => (isHoldingGroupRow(row) ? row.baseCurrency : row.localCurrency),
+    accessorFn: (row) =>
+      isHoldingGroupRow(row) || isStrategyGroupRow(row) ? row.baseCurrency : row.localCurrency,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Currency" />,
     meta: {
       label: "Currency",
     },
     cell: ({ row }) => {
       const data = row.original;
-      if (isHoldingGroupRow(data)) {
+      if (isHoldingGroupRow(data) || isStrategyGroupRow(data)) {
         return <div className="text-muted-foreground">{data.baseCurrency}</div>;
       }
       return <div className="text-muted-foreground">{data.localCurrency}</div>;
@@ -532,6 +654,10 @@ const getColumns = (
       const data = row.original;
 
       if (isHoldingGroupRow(data)) {
+        return <div className="flex items-center justify-end" />;
+      }
+
+      if (isStrategyGroupRow(data)) {
         return <div className="flex items-center justify-end" />;
       }
 

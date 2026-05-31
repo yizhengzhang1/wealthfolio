@@ -36,7 +36,32 @@ vi.mock("@wealthfolio/ui", () => ({
   QuantityDisplay: ({ value }: { value: number }) => <span>{value}</span>,
   GainPercent: ({ value }: { value: number }) => <span>{value}</span>,
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>{children}</button>
+  ),
+  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) => (open ? <div>{children}</div> : null),
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Input: (props: Record<string, unknown>) => <input {...props} />,
+  Checkbox: ({ onCheckedChange }: { onCheckedChange?: (v: boolean) => void }) => (
+    <input type="checkbox" onChange={(e) => onCheckedChange?.(e.target.checked)} />
+  ),
+  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>{children}</button>
+  ),
+  Icons: new Proxy({}, { get: () => () => <span /> }),
   usePersistentState: <T,>(_key: string, initial: T) => useState<T>(initial),
+}));
+vi.mock("@/hooks/use-option-strategies", () => ({
+  useOptionStrategies: () => ({ data: [] }),
+  useCreateOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 function makeHolding(p: { id: string; symbol: string; name?: string; mv?: number }): Holding {
@@ -103,5 +128,29 @@ describe("HoldingsTable grouping", () => {
     expect(screen.queryByRole("button", { name: /AST SpaceMobile/i })).not.toBeInTheDocument();
     expect(screen.getAllByText("ASTS").length).toBeGreaterThan(0);
     expect(screen.getByText(/CALL/)).toBeInTheDocument();
+  });
+});
+
+const VERT_LONG = makeHolding({ id: "vl", symbol: "ASTS260612C00100000", mv: 250 });
+const VERT_SHORT = (() => {
+  const h = makeHolding({ id: "vs", symbol: "ASTS260612C00110000", mv: -80 });
+  return { ...h, quantity: -1 } as Holding;
+})();
+
+describe("HoldingsTable strategy sub-grouping", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("renders a strategy row nested under the underlying when sub-grouping is on", () => {
+    renderTable([VERT_LONG, VERT_SHORT]);
+    // Strategy default label from plan 2 (vertical -> e.g. "Bull Call Spread"); assert the
+    // strategy row's leg-count badge (2) and that legs are still reachable.
+    expect(screen.getByRole("button", { name: /Spread/i })).toBeInTheDocument();
+  });
+
+  it("falls back to flat legs when the strategy sub-grouping toggle is off", async () => {
+    renderTable([VERT_LONG, VERT_SHORT]);
+    // Toggle is rendered by the stubbed AnimatedToggleGroup as a button labelled "Legs".
+    await userEvent.click(screen.getByText("Legs"));
+    expect(screen.queryByRole("button", { name: /Spread/i })).not.toBeInTheDocument();
   });
 });

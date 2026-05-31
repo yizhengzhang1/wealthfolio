@@ -29,7 +29,7 @@ export interface GroupOptions {
   overrides: StrategyOverride[];
 }
 
-export type HoldingRow = HoldingGroupRow | Holding;
+export type HoldingRow = HoldingGroupRow | StrategyGroupRow | Holding;
 
 export function isHoldingGroupRow(row: HoldingRow): row is HoldingGroupRow {
   return (row as HoldingGroupRow).kind === "group";
