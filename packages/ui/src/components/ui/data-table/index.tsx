@@ -1,10 +1,12 @@
 import {
   ColumnDef,
   ColumnFiltersState,
+  ExpandedState,
   SortingState,
   VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFacetedRowModel,
   getFacetedUniqueValues,
   getFilteredRowModel,
@@ -37,6 +39,9 @@ interface DataTableProps<TData, TValue> {
   scrollable?: boolean;
   showColumnToggle?: boolean;
   toolbarActions?: React.ReactNode;
+  getSubRows?: (originalRow: TData, index: number) => TData[] | undefined;
+  defaultExpanded?: ExpandedState;
+  filterFromLeafRows?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -52,6 +57,9 @@ export function DataTable<TData, TValue>({
   scrollable = false,
   showColumnToggle = false,
   toolbarActions,
+  getSubRows,
+  defaultExpanded,
+  filterFromLeafRows = false,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] = storageKey
@@ -63,16 +71,22 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = storageKey
     ? usePersistentState<SortingState>(`${storageKey}:sorting`, defaultSorting || [])
     : React.useState<SortingState>(defaultSorting || []);
+  const [expanded, setExpanded] = storageKey
+    ? usePersistentState<ExpandedState>(`${storageKey}:expanded`, defaultExpanded ?? {})
+    : React.useState<ExpandedState>(defaultExpanded ?? {});
 
   const table = useReactTable({
     data,
     columns,
     manualPagination: true,
+    getSubRows,
+    filterFromLeafRows,
     state: {
       sorting,
       columnVisibility,
       rowSelection,
       columnFilters,
+      expanded,
       pagination: manualPagination
         ? undefined
         : {
@@ -86,10 +100,12 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onExpandedChange: setExpanded,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
