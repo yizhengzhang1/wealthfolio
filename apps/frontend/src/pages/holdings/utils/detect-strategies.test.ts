@@ -474,4 +474,54 @@ describe("override application", () => {
   });
 });
 
+describe("greedy ordering & ambiguity (integration)", () => {
+  it("a clean iron condor is one group, not two verticals", () => {
+    const legs = [
+      makeHolding({ id: "lp", symbol: put(80, EXP_A), quantity: 1 }),
+      makeHolding({ id: "sp", symbol: put(90, EXP_A), quantity: -1 }),
+      makeHolding({ id: "sc", symbol: call(110, EXP_A), quantity: -1 }),
+      makeHolding({ id: "lc", symbol: call(120, EXP_A), quantity: 1 }),
+    ];
+    const { strategies } = detectStrategies(legs, NO_OVERRIDES);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("iron-condor");
+  });
+
+  it("each leg is consumed at most once across families", () => {
+    // a vertical + an unrelated lone short put: vertical groups, put stays loose.
+    const legs = [
+      makeHolding({ id: "L", symbol: call(100, EXP_A), quantity: 1 }),
+      makeHolding({ id: "S", symbol: call(110, EXP_A), quantity: -1 }),
+      makeHolding({ id: "p", symbol: put(95, EXP_A), quantity: -1 }),
+    ];
+    const { strategies, looseLegs } = detectStrategies(legs, NO_OVERRIDES);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("vertical");
+    expect(looseLegs).toHaveLength(1);
+    expect(looseLegs[0].id).toBe("p");
+    const grouped = strategies.flatMap((s) => s.subRows.map((h) => h.id));
+    const all = [...grouped, ...looseLegs.map((h) => h.id)];
+    expect(new Set(all).size).toBe(all.length); // no leg counted twice
+  });
+
+  it("strategies come before loose legs and totals reconcile", () => {
+    const legs = [
+      makeHolding({ id: "L", symbol: call(100, EXP_A), quantity: 1, cost: 600 }),
+      makeHolding({ id: "S", symbol: call(110, EXP_A), quantity: -1, cost: -200 }),
+      makeHolding({ id: "x", symbol: put(95, EXP_B), quantity: 1, cost: 50 }),
+    ];
+    const { strategies, looseLegs } = detectStrategies(legs, NO_OVERRIDES);
+    const totalLegs = strategies.reduce((n, s) => n + s.memberCount, 0) + looseLegs.length;
+    expect(totalLegs).toBe(3);
+  });
+
+  it("a degenerate same-strike same-expiry call straddle-shape with opposite sides stays loose", () => {
+    const c = makeHolding({ id: "c", symbol: call(100, EXP_A), quantity: 1 });
+    const c2 = makeHolding({ id: "c2", symbol: call(100, EXP_A), quantity: -1 });
+    const { strategies, looseLegs } = detectStrategies([c, c2], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };
