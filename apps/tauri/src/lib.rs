@@ -782,6 +782,11 @@ pub fn run() {
             commands::custom_provider::update_custom_provider,
             commands::custom_provider::delete_custom_provider,
             commands::custom_provider::test_custom_provider_source,
+            // Option strategy override commands
+            commands::option_strategy::get_option_strategy_overrides,
+            commands::option_strategy::create_option_strategy_override,
+            commands::option_strategy::update_option_strategy_override,
+            commands::option_strategy::delete_option_strategy_override,
             // Health commands
             commands::health::get_health_status,
             commands::health::run_health_checks,
