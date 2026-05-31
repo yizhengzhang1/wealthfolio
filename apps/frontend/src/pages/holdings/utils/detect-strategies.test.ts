@@ -300,4 +300,42 @@ describe("stock-based: collar", () => {
   });
 });
 
+describe("three-leg: butterfly", () => {
+  it("long call butterfly: long 1x K1, short 2x K2, long 1x K3, equidistant", () => {
+    const w1 = makeHolding({ id: "w1", symbol: call(90, EXP_A), quantity: 1 });
+    const mid = makeHolding({ id: "mid", symbol: call(100, EXP_A), quantity: -2 });
+    const w2 = makeHolding({ id: "w2", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies, looseLegs } = detectStrategies([w1, mid, w2], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].strategyType).toBe("butterfly");
+    expect(strategies[0].name).toBe("Butterfly");
+    expect(strategies[0].memberCount).toBe(3);
+  });
+
+  it("short put butterfly: short 1x K1, long 2x K2, short 1x K3", () => {
+    const w1 = makeHolding({ id: "w1", symbol: put(90, EXP_A), quantity: -1 });
+    const mid = makeHolding({ id: "mid", symbol: put(100, EXP_A), quantity: 2 });
+    const w2 = makeHolding({ id: "w2", symbol: put(110, EXP_A), quantity: -1 });
+    const { strategies } = detectStrategies([w1, mid, w2], NO_OVERRIDES);
+    expect(strategies[0].strategyType).toBe("butterfly");
+  });
+
+  it("non-equidistant strikes are not a butterfly (-> loose / partial)", () => {
+    const w1 = makeHolding({ id: "w1", symbol: call(90, EXP_A), quantity: 1 });
+    const mid = makeHolding({ id: "mid", symbol: call(95, EXP_A), quantity: -2 });
+    const w2 = makeHolding({ id: "w2", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([w1, mid, w2], NO_OVERRIDES);
+    expect(strategies.some((s) => s.strategyType === "butterfly")).toBe(false);
+  });
+
+  it("wrong ratio 1:1:1 is not a butterfly", () => {
+    const w1 = makeHolding({ id: "w1", symbol: call(90, EXP_A), quantity: 1 });
+    const mid = makeHolding({ id: "mid", symbol: call(100, EXP_A), quantity: -1 });
+    const w2 = makeHolding({ id: "w2", symbol: call(110, EXP_A), quantity: 1 });
+    const { strategies } = detectStrategies([w1, mid, w2], NO_OVERRIDES);
+    expect(strategies.some((s) => s.strategyType === "butterfly")).toBe(false);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

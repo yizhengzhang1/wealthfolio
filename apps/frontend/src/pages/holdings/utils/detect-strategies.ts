@@ -204,6 +204,25 @@ function classifyCollar(
   return callLeg.occ!.strikePrice > putLeg.occ!.strikePrice;
 }
 
+/** Try 3 same-type same-expiry options -> butterfly (1:2:1, equidistant, mid opposite sign). */
+function classifyButterfly(legs: LegFeature[]): boolean {
+  if (legs.length !== 3) return false;
+  if (!legs.every((f) => f.isOption)) return false;
+  const type = legs[0].occ!.optionType;
+  if (!legs.every((f) => f.occ!.optionType === type)) return false;
+  const exp = legs[0].occ!.expiration;
+  if (!legs.every((f) => f.occ!.expiration === exp)) return false;
+  const sorted = [...legs].sort((a, b) => a.occ!.strikePrice - b.occ!.strikePrice);
+  const [k1, k2, k3] = sorted.map((f) => f.occ!.strikePrice);
+  if (k1 === k2 || k2 === k3) return false; // need 3 distinct strikes
+  if (k2 - k1 !== k3 - k2) return false; // equidistant
+  const [q1, q2, q3] = sorted.map((f) => f.quantity);
+  // 1:2:1 with middle opposite-signed: q1 == q3, q2 == -2*q1, |q1| == 1 ratio.
+  if (q1 !== q3) return false;
+  if (q1 === 0) return false;
+  return q2 === -2 * q1;
+}
+
 export function detectStrategies(
   legs: Holding[],
   _overrides: StrategyOverride[],
@@ -215,6 +234,32 @@ export function detectStrategies(
   const strategies: StrategyGroupRow[] = [];
 
   const avail = () => pool.filter((f) => !consumed.has(f));
+
+  // ---- butterfly: 3 same-type same-expiry options, 1:2:1 equidistant ---
+  {
+    const opts = avail().filter((f) => f.isOption);
+    outer: for (let i = 0; i < opts.length; i++) {
+      for (let j = i + 1; j < opts.length; j++) {
+        for (let k = j + 1; k < opts.length; k++) {
+          const trio = [opts[i], opts[j], opts[k]];
+          if (trio.some((f) => consumed.has(f))) continue;
+          if (classifyButterfly(trio)) {
+            trio.forEach((f) => consumed.add(f));
+            strategies.push(
+              buildStrategyRow(
+                underlyingKey,
+                "butterfly",
+                defaultStrategyLabel("butterfly"),
+                "auto",
+                trio.map((f) => f.holding),
+              ),
+            );
+            continue outer;
+          }
+        }
+      }
+    }
+  }
 
   // ---- 2-leg verticals / calendars / diagonals -------------------------
   for (let i = 0; i < pool.length; i++) {
