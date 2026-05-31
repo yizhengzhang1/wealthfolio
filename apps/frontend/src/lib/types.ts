@@ -2327,3 +2327,51 @@ export interface DriftReport {
   outOfBandCount: number;
   rows: DriftRow[];
 }
+
+// ─── Option strategy grouping (P2) ────────────────────────────────────────────
+
+/** Detected/overridable option strategy kinds (spec 4.1). */
+export type StrategyType =
+  | "vertical"
+  | "calendar"
+  | "diagonal"
+  | "straddle"
+  | "strangle"
+  | "covered-call"
+  | "protective-put"
+  | "collar"
+  | "butterfly"
+  | "iron-condor"
+  | "iron-butterfly"
+  | "custom";
+
+/** Persisted user override for option-strategy grouping (spec 4.2). */
+export interface StrategyOverride {
+  id: string;
+  accountId: string;
+  underlying: string;
+  name: string | null;
+  strategyType: StrategyType | null;
+  legs: string[];
+  mode: "group" | "exclude";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Payload for creating a new strategy override. */
+export interface NewStrategyOverride {
+  accountId: string;
+  underlying: string;
+  name?: string | null;
+  strategyType?: StrategyType | null;
+  legs: string[];
+  mode: "group" | "exclude";
+}
+
+/** Partial-update payload for an existing strategy override. */
+export interface UpdateStrategyOverride {
+  name?: string | null;
+  strategyType?: StrategyType | null;
+  legs?: string[];
+  mode?: "group" | "exclude";
+}
