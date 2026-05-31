@@ -79,6 +79,8 @@ function buildGroupRow(underlyingKey: string, members: Holding[]): HoldingGroupR
     underlyingName: stock?.instrument?.name ?? null,
     memberCount: members.length,
     underlyingPrice: stock?.price ?? null,
+    // All holdings in a given scope share the same base currency, so taking the
+    // first member's is safe; aggregates above are summed in base currency.
     baseCurrency: members[0].baseCurrency,
     marketValueBase,
     costBasisBase,

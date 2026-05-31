@@ -50,6 +50,10 @@ describe("getUnderlyingKey", () => {
 });
 
 describe("groupHoldingsByUnderlying", () => {
+  it("returns an empty array for empty input", () => {
+    expect(groupHoldingsByUnderlying([])).toEqual([]);
+  });
+
   it("keeps a single-member underlying flat (not a group)", () => {
     const rows = groupHoldingsByUnderlying([makeHolding({ id: "1", symbol: "TSLA" })]);
     expect(rows).toHaveLength(1);
@@ -98,6 +102,15 @@ describe("groupHoldingsByUnderlying", () => {
     const group = rows[0] as HoldingGroupRow;
     expect(group.underlyingPrice).toBeNull();
     expect(group.underlyingName).toBeNull();
+  });
+
+  it("returns null dayChangePct when prevClose legs cancel to zero", () => {
+    const rows = groupHoldingsByUnderlying([
+      makeHolding({ id: "c1", symbol: OCC_CALL, mv: 10, day: 1, prevClose: 100 }),
+      makeHolding({ id: "c2", symbol: OCC_CALL2, mv: 20, day: 2, prevClose: -100 }),
+    ]);
+    const group = rows[0] as HoldingGroupRow;
+    expect(group.dayChangePct).toBeNull();
   });
 
   it("preserves first-seen order and mixes groups with standalone holdings", () => {
