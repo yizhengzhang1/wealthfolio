@@ -86,6 +86,7 @@ export const CashHoldingsWidget = ({
                       value={holding.marketValue?.local ?? 0}
                       currency={holding.localCurrency}
                       isHidden={isBalanceHidden}
+                      displayCurrency={false}
                     />
                   </span>
                 </div>

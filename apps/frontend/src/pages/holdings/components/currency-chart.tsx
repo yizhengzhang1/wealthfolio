@@ -11,7 +11,10 @@ const INDICATOR_COLORS = ["var(--chart-1)", "var(--chart-5)", "var(--chart-7)", 
 
 interface CurrencyData {
   name: string;
-  value: number;
+  /** Sum in the currency's own (local) units — shown to the user. */
+  localValue: number;
+  /** Sum converted to base currency — used for proportion + sort. */
+  baseValue: number;
   percent: number;
 }
 
@@ -24,8 +27,13 @@ function getCurrencyData(holdings: Holding[] = [], baseCurrency: string): Curren
   if (!Array.isArray(holdings) || !holdings.length || !baseCurrency)
     return { data: [], totalBase: 0 };
 
-  // Aggregate holdings by currency using local value, calculate total base value
-  const aggregation = holdings.reduce<{ currencies: Record<string, number>; totalBase: number }>(
+  // Aggregate holdings by currency, tracking BOTH the local-currency sum (shown
+  // to the user) and the base-currency sum (used for proportion/sort/total).
+  const aggregation = holdings.reduce<{
+    local: Record<string, number>;
+    base: Record<string, number>;
+    totalBase: number;
+  }>(
     (acc, holding) => {
       if (!holding) return acc;
 
@@ -36,35 +44,30 @@ function getCurrencyData(holdings: Holding[] = [], baseCurrency: string): Curren
       // Ensure we're not adding NaN values
       if (isNaN(localValue) || isNaN(baseValue)) return acc;
 
-      const current = acc.currencies[currency] || 0;
-      acc.currencies[currency] = current + baseValue;
+      acc.local[currency] = (acc.local[currency] || 0) + localValue;
+      acc.base[currency] = (acc.base[currency] || 0) + baseValue;
       acc.totalBase += baseValue;
 
       return acc;
     },
-    { currencies: {}, totalBase: 0 },
+    { local: {}, base: {}, totalBase: 0 },
   );
 
-  const { currencies, totalBase } = aggregation;
+  const { local, base, totalBase } = aggregation;
 
   // Handle case where total base value is 0 to avoid division by zero
   if (totalBase === 0) return { data: [], totalBase: 0 };
 
-  const currencyData = Object.entries(currencies)
-    .map(([name, value]) => {
-      // Calculate percentage based on base value relative to total base value
-      // Find the corresponding base value contribution for this currency
-      const baseValueContribution = holdings
-        .filter((h) => (h.localCurrency || baseCurrency) === name)
-        .reduce((sum, h) => sum + (Number(h.marketValue?.base) || 0), 0);
-
-      return {
-        name,
-        value: Number(value) || 0, // Ensure value is a number
-        percent: (baseValueContribution / totalBase) * 100 || 0, // Calculate percent based on base values
-      };
-    })
-    .sort((a, b) => b.value - a.value);
+  // Display each currency's own (local) amount; percentage stays base-relative
+  // so the proportions remain comparable across currencies.
+  const currencyData = Object.entries(base)
+    .map(([name, baseValue]) => ({
+      name,
+      localValue: Number(local[name]) || 0,
+      baseValue: Number(baseValue) || 0,
+      percent: (Number(baseValue) / totalBase) * 100 || 0,
+    }))
+    .sort((a, b) => b.baseValue - a.baseValue);
 
   return { data: currencyData, totalBase };
 }
@@ -99,7 +102,7 @@ export function HoldingCurrencyChart({
           {/* Title */}
           <div className="flex items-center justify-between">
             <h3 className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
-              Currency
+              Currency Exposure
             </h3>
           </div>
 
@@ -136,8 +139,8 @@ export function HoldingCurrencyChart({
                 </div>
                 <div className="flex shrink-0 items-center gap-2 text-sm font-medium">
                   <AmountDisplay
-                    value={currency.value}
-                    currency={baseCurrency}
+                    value={currency.localValue}
+                    currency={currency.name}
                     isHidden={isBalanceHidden}
                     displayCurrency={false}
                   />
