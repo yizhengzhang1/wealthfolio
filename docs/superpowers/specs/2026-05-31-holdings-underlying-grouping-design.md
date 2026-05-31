@@ -40,7 +40,7 @@
 - 命名策略组合、策略类型识别、组合持久化(→ P2)。
 - 任何 Greeks / IV / 列配置(→ P3)。
 - 后端(`apps/server` / `crates/core`)改动、DB 迁移、新的 IPC/HTTP 端点 —— P1 完全在前端完成。
-- 移动端表(`holdings-table-mobile.tsx`)—— 目标仅 Web 桌面浏览器,本次不动。
+- ~~移动端表(`holdings-table-mobile.tsx`)—— 目标仅 Web 桌面浏览器,本次不动。~~ **(后续增量已纳入:用户要求手机浏览器也看到同样效果)** 移动端为卡片列表,做法:复用 `group-by-underlying.ts`,同标的 ≥2 折叠成可展开父卡片(净合计用 base 货币),**默认折叠**;在 `holdings-mobile-filter-sheet.tsx` 加 Grouped/Flat 开关(默认 Grouped);折叠/开关状态持久化(`holdings-mobile:expanded` / `holdings-mobile:group-by-underlying`)。
 - Tauri 桌面端专属适配 —— 前端代码共享,改动对两端均生效,但不为 Tauri 做额外工作;不引入会破坏 Tauri 构建的依赖(P1 无新后端命令,故无此风险)。
 
 ## 3. 数据模型(仅前端)

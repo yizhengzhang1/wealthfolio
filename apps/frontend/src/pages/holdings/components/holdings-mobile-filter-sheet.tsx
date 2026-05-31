@@ -27,6 +27,8 @@ interface HoldingsMobileFilterSheetProps {
   setSortBy: (value: "symbol" | "marketValue") => void;
   showTotalReturn: boolean;
   setShowTotalReturn: (value: boolean) => void;
+  groupByUnderlying?: boolean;
+  setGroupByUnderlying?: (value: boolean) => void;
   categoryFilter?: HoldingCategoryFilterId;
   setCategoryFilter?: (value: HoldingCategoryFilterId) => void;
   typeOptions?: { value: string; label: string }[];
@@ -46,6 +48,8 @@ export const HoldingsMobileFilterSheet = ({
   setSortBy,
   showTotalReturn,
   setShowTotalReturn,
+  groupByUnderlying = true,
+  setGroupByUnderlying,
   categoryFilter = "investments",
   setCategoryFilter,
   typeOptions,
@@ -63,6 +67,24 @@ export const HoldingsMobileFilterSheet = ({
           <div className="space-y-6">
             {/* View Settings */}
             <div className="grid grid-cols-1 gap-6">
+              {setGroupByUnderlying && (
+                <div className="space-y-3">
+                  <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                    Grouping
+                  </h4>
+                  <AnimatedToggleGroup
+                    value={groupByUnderlying ? "grouped" : "flat"}
+                    onValueChange={(value) => setGroupByUnderlying(value === "grouped")}
+                    items={[
+                      { value: "grouped", label: "Grouped" },
+                      { value: "flat", label: "Flat" },
+                    ]}
+                    size="sm"
+                    className="inline-flex w-auto"
+                  />
+                </div>
+              )}
+
               <div className="space-y-3">
                 <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
                   Sort By
