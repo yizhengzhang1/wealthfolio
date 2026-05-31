@@ -255,17 +255,53 @@ function classifyIron(legs: LegFeature[]): StrategyType | null {
   return null;
 }
 
+/** Resolve the display name for an override: name ?? label(strategyType ?? 'custom'). */
+function overrideName(ovr: StrategyOverride): string {
+  if (ovr.name) return ovr.name;
+  return defaultStrategyLabel(ovr.strategyType ?? "custom");
+}
+
 export function detectStrategies(
   legs: Holding[],
-  _overrides: StrategyOverride[],
+  overrides: StrategyOverride[],
 ): { strategies: StrategyGroupRow[]; looseLegs: Holding[] } {
   if (legs.length === 0) return { strategies: [], looseLegs: [] };
   const underlyingKey = deriveUnderlyingKey(legs);
   const pool: LegFeature[] = legs.map((h) => extractFeature(h, underlyingKey));
   const consumed = new Set<LegFeature>();
   const strategies: StrategyGroupRow[] = [];
+  const forcedLoose = new Set<LegFeature>();
 
-  const avail = () => pool.filter((f) => !consumed.has(f));
+  const avail = () => pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f));
+
+  // ---- override pass (runs first) -------------------------------------
+  for (const ovr of overrides) {
+    const matched = pool.filter(
+      (f) =>
+        !consumed.has(f) &&
+        !forcedLoose.has(f) &&
+        f.holding.accountId === ovr.accountId &&
+        ovr.legs.includes(f.symbol),
+    );
+    if (ovr.mode === "exclude") {
+      matched.forEach((f) => forcedLoose.add(f));
+      continue;
+    }
+    // mode === 'group': hide groups with < 2 matched legs.
+    if (matched.length < 2) continue;
+    matched.forEach((f) => consumed.add(f));
+    const type: StrategyType = ovr.strategyType ?? "custom";
+    strategies.push(
+      buildStrategyRow(
+        underlyingKey,
+        type,
+        overrideName(ovr),
+        "override",
+        matched.map((f) => f.holding),
+        ovr.id,
+      ),
+    );
+  }
 
   // ---- iron-condor / iron-butterfly: 4 same-expiry options ------------
   {
@@ -324,9 +360,9 @@ export function detectStrategies(
 
   // ---- 2-leg verticals / calendars / diagonals -------------------------
   for (let i = 0; i < pool.length; i++) {
-    if (consumed.has(pool[i])) continue;
+    if (consumed.has(pool[i]) || forcedLoose.has(pool[i])) continue;
     for (let j = i + 1; j < pool.length; j++) {
-      if (consumed.has(pool[j])) continue;
+      if (consumed.has(pool[j]) || forcedLoose.has(pool[j])) continue;
       const hit = classifyVerticalFamily(pool[i], pool[j]) ?? classifyStraddleFamily(pool[i], pool[j]);
       if (hit) {
         consumed.add(pool[i]);
@@ -347,9 +383,9 @@ export function detectStrategies(
 
   // ---- collar: stock + short call(high) + long put(low) ----------------
   for (let i = 0; i < pool.length; i++) {
-    if (consumed.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
-    const calls = pool.filter((f) => !consumed.has(f) && f.isOption && f.occ!.optionType === "CALL" && f.isShort);
-    const puts = pool.filter((f) => !consumed.has(f) && f.isOption && f.occ!.optionType === "PUT" && f.isLong);
+    if (consumed.has(pool[i]) || forcedLoose.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
+    const calls = pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f) && f.isOption && f.occ!.optionType === "CALL" && f.isShort);
+    const puts = pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f) && f.isOption && f.occ!.optionType === "PUT" && f.isLong);
     let matched = false;
     for (const c of calls) {
       for (const p of puts) {
@@ -374,9 +410,9 @@ export function detectStrategies(
 
   // ---- stock + 1 option: covered-call / protective-put ----------------
   for (let i = 0; i < pool.length; i++) {
-    if (consumed.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
+    if (consumed.has(pool[i]) || forcedLoose.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
     for (let j = 0; j < pool.length; j++) {
-      if (j === i || consumed.has(pool[j]) || !pool[j].isOption) continue;
+      if (j === i || consumed.has(pool[j]) || forcedLoose.has(pool[j]) || !pool[j].isOption) continue;
       const hit = classifyStockPlusOne(pool[i], pool[j]);
       if (hit) {
         consumed.add(pool[i]);
@@ -392,6 +428,8 @@ export function detectStrategies(
     }
   }
 
-  const looseLegs = avail().map((f) => f.holding);
+  const looseLegs = pool
+    .filter((f) => !consumed.has(f))
+    .map((f) => f.holding);
   return { strategies, looseLegs };
 }

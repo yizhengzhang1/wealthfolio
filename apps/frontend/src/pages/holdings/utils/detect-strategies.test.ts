@@ -383,4 +383,95 @@ describe("four-leg: iron-condor / iron-butterfly", () => {
   });
 });
 
+function makeOverride(p: {
+  id: string;
+  accountId?: string;
+  underlying?: string;
+  name?: string | null;
+  strategyType?: StrategyOverride["strategyType"];
+  legs: string[];
+  mode: "group" | "exclude";
+}): StrategyOverride {
+  return {
+    id: p.id,
+    accountId: p.accountId ?? "acct-1",
+    underlying: p.underlying ?? "ASTS",
+    name: p.name ?? null,
+    strategyType: p.strategyType ?? null,
+    legs: p.legs,
+    mode: p.mode,
+    createdAt: "2026-05-31T00:00:00Z",
+    updatedAt: "2026-05-31T00:00:00Z",
+  };
+}
+
+describe("override application", () => {
+  it("mode='group' assembles matched legs into an override strategy row", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: call(110, EXP_A), quantity: -1 });
+    const ovr = makeOverride({
+      id: "o1",
+      name: "My Spread",
+      strategyType: "vertical",
+      legs: [call(100, EXP_A), call(110, EXP_A)],
+      mode: "group",
+    });
+    const { strategies, looseLegs } = detectStrategies([a, b], [ovr]);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0].source).toBe("override");
+    expect(strategies[0].overrideId).toBe("o1");
+    expect(strategies[0].name).toBe("My Spread");
+    expect(strategies[0].strategyType).toBe("vertical");
+  });
+
+  it("mode='group' with null name falls back to the strategyType label", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: call(110, EXP_A), quantity: -1 });
+    const ovr = makeOverride({ id: "o1", name: null, strategyType: "vertical", legs: [call(100, EXP_A), call(110, EXP_A)], mode: "group" });
+    const { strategies } = detectStrategies([a, b], [ovr]);
+    expect(strategies[0].name).toBe("Vertical Spread");
+  });
+
+  it("mode='group' with null strategyType uses 'custom' label", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: put(90, EXP_A), quantity: -1 });
+    const ovr = makeOverride({ id: "o1", name: null, strategyType: null, legs: [call(100, EXP_A), put(90, EXP_A)], mode: "group" });
+    const { strategies } = detectStrategies([a, b], [ovr]);
+    expect(strategies[0].strategyType).toBe("custom");
+    expect(strategies[0].name).toBe("Custom Strategy");
+  });
+
+  it("group override matching < 2 present legs is hidden (legs still go to auto)", () => {
+    // override references 2 legs but only 1 is present; closed leg dropped out.
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const ovr = makeOverride({ id: "o1", legs: [call(100, EXP_A), call(110, EXP_A)], mode: "group" });
+    const { strategies, looseLegs } = detectStrategies([a, ovr ? a : a].slice(0, 1) as Holding[], [ovr]);
+    // the single present leg is NOT grouped (hidden) -> falls through to auto -> loose
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toEqual([a]);
+  });
+
+  it("mode='exclude' forces matched legs to loose, skipping auto-detection", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1 });
+    const b = makeHolding({ id: "b", symbol: call(110, EXP_A), quantity: -1 });
+    const ovr = makeOverride({ id: "o1", legs: [call(100, EXP_A), call(110, EXP_A)], mode: "exclude" });
+    const { strategies, looseLegs } = detectStrategies([a, b], [ovr]);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+
+  it("override only matches legs in the same account", () => {
+    const a = makeHolding({ id: "a", symbol: call(100, EXP_A), quantity: 1, accountId: "acct-1" });
+    const b = makeHolding({ id: "b", symbol: call(110, EXP_A), quantity: -1, accountId: "acct-2" });
+    const ovr = makeOverride({ id: "o1", accountId: "acct-1", legs: [call(100, EXP_A), call(110, EXP_A)], mode: "group" });
+    const { strategies, looseLegs } = detectStrategies([a, b], [ovr]);
+    // only leg a matches the override account -> < 2 -> hidden -> both fall to auto.
+    // a + b are same account? no (different) -> auto sees a(acct1)+b(acct2); they still
+    // form a vertical by symbol, but only 1 matched the override so override is hidden.
+    expect(strategies.some((s) => s.source === "override")).toBe(false);
+    expect(looseLegs.length + strategies.flatMap((s) => s.subRows).length).toBe(2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };
