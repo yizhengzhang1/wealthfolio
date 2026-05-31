@@ -5,6 +5,12 @@ import { useState, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HoldingsTable } from "./holdings-table";
+import {
+  useOptionStrategies,
+  useCreateOptionStrategy,
+  useUpdateOptionStrategy,
+  useDeleteOptionStrategy,
+} from "@/hooks/use-option-strategies";
 
 vi.mock("@/hooks/use-balance-privacy", () => ({
   useBalancePrivacy: () => ({ isBalanceHidden: false }),
@@ -57,11 +63,48 @@ vi.mock("@wealthfolio/ui", () => ({
   Icons: new Proxy({}, { get: () => () => <span /> }),
   usePersistentState: <T,>(_key: string, initial: T) => useState<T>(initial),
 }));
+// The component imports these from their @wealthfolio/ui subpaths. Stub the
+// subpaths so the strategy ⋯ menu, rename dialog, and leg checkboxes render
+// synchronously (the real Radix dropdown/dialog stay collapsed in jsdom). The
+// real DataTable imports its own dropdown/button via package-internal relative
+// paths, so it is unaffected by these mocks — include every export it needs.
+vi.mock("@wealthfolio/ui/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>{children}</button>
+  ),
+  DropdownMenuCheckboxItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+}));
+vi.mock("@wealthfolio/ui/components/ui/dialog", () => ({
+  Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <div>{children}</div> : null,
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("@wealthfolio/ui/components/ui/input", () => ({
+  Input: (props: Record<string, unknown>) => <input {...props} />,
+}));
+vi.mock("@wealthfolio/ui/components/ui/checkbox", () => ({
+  Checkbox: ({
+    checked,
+    onCheckedChange,
+  }: {
+    checked?: boolean;
+    onCheckedChange?: (v: boolean) => void;
+  }) => (
+    <input type="checkbox" checked={!!checked} onChange={(e) => onCheckedChange?.(e.target.checked)} />
+  ),
+}));
 vi.mock("@/hooks/use-option-strategies", () => ({
-  useOptionStrategies: () => ({ data: [] }),
-  useCreateOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteOptionStrategy: () => ({ mutate: vi.fn(), isPending: false }),
+  useOptionStrategies: vi.fn(() => ({ data: [] })),
+  useCreateOptionStrategy: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateOptionStrategy: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteOptionStrategy: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 function makeHolding(p: { id: string; symbol: string; name?: string; mv?: number }): Holding {
@@ -131,10 +174,10 @@ describe("HoldingsTable grouping", () => {
   });
 });
 
-const VERT_LONG = makeHolding({ id: "vl", symbol: "ASTS260612C00100000", mv: 250 });
+const VERT_LONG = { ...makeHolding({ id: "vl", symbol: "ASTS260612C00100000", mv: 250 }), accountId: "vl" } as Holding;
 const VERT_SHORT = (() => {
   const h = makeHolding({ id: "vs", symbol: "ASTS260612C00110000", mv: -80 });
-  return { ...h, quantity: -1 } as Holding;
+  return { ...h, quantity: -1, accountId: "vl" } as Holding;
 })();
 
 describe("HoldingsTable strategy sub-grouping", () => {
@@ -152,5 +195,142 @@ describe("HoldingsTable strategy sub-grouping", () => {
     // Toggle is rendered by the stubbed AnimatedToggleGroup as a button labelled "Legs".
     await userEvent.click(screen.getByText("Legs"));
     expect(screen.queryByRole("button", { name: /Spread/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("HoldingsTable strategy editing", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.mocked(useOptionStrategies).mockReturnValue({ data: [] } as never);
+    vi.mocked(useCreateOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+    vi.mocked(useUpdateOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+    vi.mocked(useDeleteOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+  });
+
+  it("renames a strategy via the context menu dialog (update for override-backed)", async () => {
+    const updateMutate = vi.fn();
+    vi.mocked(useUpdateOptionStrategy).mockReturnValue({ mutate: updateMutate, isPending: false } as never);
+    vi.mocked(useOptionStrategies).mockReturnValue({
+      data: [
+        {
+          id: "ov-1",
+          accountId: "vl",
+          underlying: "ASTS",
+          name: "My Spread",
+          strategyType: "vertical",
+          legs: ["ASTS260612C00100000", "ASTS260612C00110000"],
+          mode: "group",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    } as never);
+
+    renderTable([VERT_LONG, VERT_SHORT]);
+    await userEvent.click(screen.getByText("Rename"));
+    const input = screen.getByPlaceholderText(/strategy name/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "Renamed");
+    await userEvent.click(screen.getByText("Save"));
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ov-1", payload: expect.objectContaining({ name: "Renamed" }) }),
+    );
+  });
+
+  it("renames an auto-detected strategy by creating a group override", async () => {
+    const createMutate = vi.fn();
+    vi.mocked(useCreateOptionStrategy).mockReturnValue({ mutate: createMutate, isPending: false } as never);
+    vi.mocked(useOptionStrategies).mockReturnValue({ data: [] } as never);
+
+    renderTable([VERT_LONG, VERT_SHORT]);
+    await userEvent.click(screen.getByText("Rename"));
+    const input = screen.getByPlaceholderText(/strategy name/i);
+    await userEvent.clear(input); // dialog pre-fills the auto label; clear before typing
+    await userEvent.type(input, "Auto Renamed");
+    await userEvent.click(screen.getByText("Save"));
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        underlying: "ASTS",
+        mode: "group",
+        name: "Auto Renamed",
+        legs: expect.arrayContaining(["ASTS260612C00100000", "ASTS260612C00110000"]),
+      }),
+    );
+  });
+
+  it("ungroups an auto strategy by creating an exclude override", async () => {
+    const createMutate = vi.fn();
+    vi.mocked(useCreateOptionStrategy).mockReturnValue({ mutate: createMutate, isPending: false } as never);
+    vi.mocked(useOptionStrategies).mockReturnValue({ data: [] } as never);
+
+    renderTable([VERT_LONG, VERT_SHORT]);
+    await userEvent.click(screen.getByText("Ungroup"));
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        underlying: "ASTS",
+        mode: "exclude",
+        legs: expect.arrayContaining(["ASTS260612C00100000", "ASTS260612C00110000"]),
+      }),
+    );
+  });
+
+  it("ungroups an override-backed strategy by deleting its override", async () => {
+    const deleteMutate = vi.fn();
+    vi.mocked(useDeleteOptionStrategy).mockReturnValue({ mutate: deleteMutate, isPending: false } as never);
+    vi.mocked(useOptionStrategies).mockReturnValue({
+      data: [
+        {
+          id: "ov-1",
+          accountId: "vl",
+          underlying: "ASTS",
+          name: "My Spread",
+          strategyType: "vertical",
+          legs: ["ASTS260612C00100000", "ASTS260612C00110000"],
+          mode: "group",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    } as never);
+
+    renderTable([VERT_LONG, VERT_SHORT]);
+    await userEvent.click(screen.getByText("Ungroup"));
+    expect(deleteMutate).toHaveBeenCalledWith("ov-1");
+  });
+});
+
+describe("HoldingsTable create-strategy from selection", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.mocked(useOptionStrategies).mockReturnValue({ data: [] } as never);
+    vi.mocked(useCreateOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+    vi.mocked(useUpdateOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+    vi.mocked(useDeleteOptionStrategy).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+  });
+
+  it("creates a group override from checked legs with a suggested default name", async () => {
+    const createMutate = vi.fn();
+    vi.mocked(useCreateOptionStrategy).mockReturnValue({ mutate: createMutate, isPending: false } as never);
+    vi.mocked(useOptionStrategies).mockReturnValue({ data: [] } as never);
+
+    // Two unrelated legs (different expiries+types so plan 2 leaves them loose).
+    const A = makeHolding({ id: "a", symbol: "ASTS260612C00100000", mv: 10 });
+    const B = makeHolding({ id: "b", symbol: "ASTS260920P00050000", mv: 20 });
+    renderTable([A, B]);
+
+    await userEvent.click(screen.getByText("Select legs"));
+    // Each leaf re-renders on selection (the column array is rebuilt), so the
+    // first checkbox node is detached after the first click — re-query each time.
+    await userEvent.click(screen.getAllByRole("checkbox")[0]);
+    await userEvent.click(screen.getAllByRole("checkbox")[1]);
+    await userEvent.click(screen.getByText(/Create strategy/i));
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        underlying: "ASTS",
+        mode: "group",
+        strategyType: "custom",
+        legs: expect.arrayContaining(["ASTS260612C00100000", "ASTS260920P00050000"]),
+      }),
+    );
   });
 });

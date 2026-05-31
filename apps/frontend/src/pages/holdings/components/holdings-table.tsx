@@ -25,14 +25,32 @@ import { useNavigate } from "react-router-dom";
 
 import { AnimatedToggleGroup } from "@wealthfolio/ui";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@wealthfolio/ui/components/ui/dialog";
+import { Input } from "@wealthfolio/ui/components/ui/input";
+import { Checkbox } from "@wealthfolio/ui/components/ui/checkbox";
+import {
   groupHoldingsByUnderlying,
   isHoldingGroupRow,
+  getUnderlyingKey,
   type HoldingRow,
 } from "../utils/group-by-underlying";
 import {
+  defaultStrategyLabel,
   isStrategyGroupRow,
+  type StrategyGroupRow,
 } from "../utils/detect-strategies";
-import { useOptionStrategies } from "@/hooks/use-option-strategies";
+import {
+  useOptionStrategies,
+  useCreateOptionStrategy,
+  useUpdateOptionStrategy,
+  useDeleteOptionStrategy,
+} from "@/hooks/use-option-strategies";
+import { useState } from "react";
 
 // Helper function to get display value and currency based on toggle state
 const getDisplayValueAndCurrency = (
@@ -85,10 +103,85 @@ export const HoldingsTable = ({
     "holdings-table:group-by-strategy",
     true,
   );
-  const accountIds = Array.from(
-    new Set(holdings.map((h) => h.accountId).filter(Boolean)),
-  );
+  const accountIds = Array.from(new Set(holdings.map((h) => h.accountId).filter(Boolean)));
   const { data: overrides = [] } = useOptionStrategies(accountIds);
+
+  const createStrategy = useCreateOptionStrategy();
+  const updateStrategy = useUpdateOptionStrategy();
+  const deleteStrategy = useDeleteOptionStrategy();
+
+  const [renameTarget, setRenameTarget] = useState<StrategyGroupRow | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const [selecting, setSelecting] = useState(false);
+  const [selectedLegs, setSelectedLegs] = useState<Record<string, Holding>>({});
+
+  const legSymbols = (s: StrategyGroupRow) =>
+    s.subRows.map((leg) => leg.instrument?.symbol ?? leg.id);
+  const accountOf = (s: StrategyGroupRow) => s.subRows[0]?.accountId ?? "";
+
+  const openRename = (s: StrategyGroupRow) => {
+    setRenameTarget(s);
+    setRenameValue(s.name);
+  };
+
+  const submitRename = () => {
+    const s = renameTarget;
+    if (!s) return;
+    if (s.source === "override" && s.overrideId) {
+      updateStrategy.mutate({ id: s.overrideId, payload: { name: renameValue } });
+    } else {
+      createStrategy.mutate({
+        accountId: accountOf(s),
+        underlying: s.underlyingKey,
+        name: renameValue,
+        strategyType: s.strategyType,
+        legs: legSymbols(s),
+        mode: "group",
+      });
+    }
+    setRenameTarget(null);
+  };
+
+  const ungroupStrategy = (s: StrategyGroupRow) => {
+    if (s.source === "override" && s.overrideId) {
+      deleteStrategy.mutate(s.overrideId);
+    } else {
+      createStrategy.mutate({
+        accountId: accountOf(s),
+        underlying: s.underlyingKey,
+        name: null,
+        strategyType: s.strategyType,
+        legs: legSymbols(s),
+        mode: "exclude",
+      });
+    }
+  };
+
+  const toggleLeg = (leg: Holding, checked: boolean) =>
+    setSelectedLegs((prev) => {
+      const next = { ...prev };
+      const sym = leg.instrument?.symbol ?? leg.id;
+      if (checked) next[sym] = leg;
+      else delete next[sym];
+      return next;
+    });
+
+  const createFromSelection = () => {
+    const legs = Object.values(selectedLegs);
+    if (legs.length < 2) return;
+    const underlying = getUnderlyingKey(legs[0]);
+    createStrategy.mutate({
+      accountId: legs[0].accountId,
+      underlying,
+      name: defaultStrategyLabel("custom"),
+      strategyType: "custom",
+      legs: legs.map((l) => l.instrument?.symbol ?? l.id),
+      mode: "group",
+    });
+    setSelectedLegs({});
+    setSelecting(false);
+  };
 
   const baseCurrency = settings?.baseCurrency ?? holdings[0]?.baseCurrency;
   const hasMultipleCurrencies = holdings.some((holding) => {
@@ -140,7 +233,17 @@ export const HoldingsTable = ({
     <div className="flex h-full flex-col">
       <DataTable
         data={tableData}
-        columns={getColumns(isBalanceHidden, showConvertedValues, showTotalReturn, onClassify)}
+        columns={getColumns(
+          isBalanceHidden,
+          showConvertedValues,
+          showTotalReturn,
+          onClassify,
+          openRename,
+          ungroupStrategy,
+          selecting,
+          selectedLegs,
+          toggleLeg,
+        )}
         searchBy="symbol"
         filters={filters}
         showColumnToggle={true}
@@ -186,6 +289,23 @@ export const HoldingsTable = ({
                 rounded="md"
               />
             )}
+            {groupByUnderlying && groupByStrategy && (
+              <AnimatedToggleGroup
+                value={selecting ? "select" : "off"}
+                onValueChange={(value) => setSelecting(value === "select")}
+                items={[
+                  { value: "off", label: "View" },
+                  { value: "select", label: "Select legs" },
+                ]}
+                size="xs"
+                rounded="md"
+              />
+            )}
+            {selecting && Object.keys(selectedLegs).length >= 2 && (
+              <Button size="sm" onClick={createFromSelection}>
+                Create strategy ({Object.keys(selectedLegs).length})
+              </Button>
+            )}
             {setShowTotalReturn && (
               <AnimatedToggleGroup
                 value={showTotalReturn ? "total" : "daily"}
@@ -222,6 +342,24 @@ export const HoldingsTable = ({
           </div>
         }
       />
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => !open && setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename strategy</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Strategy name"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRename}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -233,6 +371,11 @@ const getColumns = (
   showConvertedValues: boolean,
   showTotalReturn: boolean,
   onClassify?: (holding: Holding) => void,
+  onRenameStrategy?: (s: StrategyGroupRow) => void,
+  onUngroupStrategy?: (s: StrategyGroupRow) => void,
+  selecting?: boolean,
+  selectedLegs?: Record<string, Holding>,
+  onToggleLeg?: (leg: Holding, checked: boolean) => void,
 ): ColumnDef<HoldingRow>[] => [
   {
     id: "symbol",
@@ -325,28 +468,34 @@ const getColumns = (
       const isManual = holding.instrument?.quoteMode === "MANUAL";
       return (
         <div
-          className="-m-1 cursor-pointer p-1"
+          className="-m-1 flex cursor-pointer items-center p-1"
           style={{ paddingLeft: row.depth > 0 ? `${row.depth * 1.5 + 0.25}rem` : undefined }}
           onClick={handleNavigate}
         >
-          <div className="flex items-center">
-            <TickerAvatar
-              symbol={parsedOption ? parsedOption.underlying : symbol}
-              className="mr-2 h-8 w-8"
-            />
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className="font-medium">{displaySymbol}</span>
-                {isManual && (
-                  <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
-                    Manual
-                  </Badge>
-                )}
-              </div>
-              <span className="text-muted-foreground line-clamp-1 text-xs">
-                {optionSubtitle ?? holding.instrument?.name ?? null}
-              </span>
+          {selecting && (
+            <span className="mr-2 inline-flex" onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={!!selectedLegs?.[holding.instrument?.symbol ?? holding.id]}
+                onCheckedChange={(v) => onToggleLeg?.(holding, v === true)}
+              />
+            </span>
+          )}
+          <TickerAvatar
+            symbol={parsedOption ? parsedOption.underlying : symbol}
+            className="mr-2 h-8 w-8"
+          />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium">{displaySymbol}</span>
+              {isManual && (
+                <Badge variant="secondary" className="h-4 px-1 py-0 text-[10px]">
+                  Manual
+                </Badge>
+              )}
             </div>
+            <span className="text-muted-foreground line-clamp-1 text-xs">
+              {optionSubtitle ?? holding.instrument?.name ?? null}
+            </span>
           </div>
         </div>
       );
@@ -658,7 +807,27 @@ const getColumns = (
       }
 
       if (isStrategyGroupRow(data)) {
-        return <div className="flex items-center justify-end" />;
+        return (
+          <div className="flex items-center justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <Icons.MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onRenameStrategy?.(data)}>
+                  <Icons.Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onUngroupStrategy?.(data)}>
+                  <Icons.Unlink className="mr-2 h-4 w-4" />
+                  Ungroup
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
       }
 
       const holding = data;
