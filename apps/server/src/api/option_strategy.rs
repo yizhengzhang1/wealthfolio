@@ -9,7 +9,7 @@ use wealthfolio_core::option_strategy::{
     NewStrategyOverride, StrategyOverride, UpdateStrategyOverride,
 };
 
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::main_lib::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -30,15 +30,16 @@ async fn get_option_strategy_overrides(
     State(state): State<Arc<AppState>>,
     RawQuery(raw): RawQuery,
 ) -> ApiResult<Json<Vec<StrategyOverride>>> {
-    let account_ids: Vec<String> = raw
-        .as_deref()
-        .map(|q| {
-            q.split('&')
-                .filter_map(|p| p.strip_prefix("accountIds="))
-                .map(|v| v.to_string())
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut account_ids: Vec<String> = Vec::new();
+    if let Some(qs) = raw.as_deref() {
+        let pairs = serde_urlencoded::from_str::<Vec<(String, String)>>(qs)
+            .map_err(|e| ApiError::BadRequest(format!("Invalid option strategy query: {e}")))?;
+        for (key, value) in pairs {
+            if key == "accountIds" || key == "accountIds[]" {
+                account_ids.push(value);
+            }
+        }
+    }
     let overrides = state
         .option_strategy_service
         .list_for_accounts(&account_ids)?;
