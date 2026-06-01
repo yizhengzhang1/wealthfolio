@@ -79,6 +79,8 @@ function HoldingRow({
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        {/* Chevron-width spacer so leaf rows align with expandable group/strategy rows */}
+        <span className="h-4 w-4 shrink-0" />
         <TickerAvatar symbol={avatarSymbol} className="size-9 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold">{title}</span>

@@ -485,9 +485,11 @@ const getColumns = (
       return (
         <div
           className="-m-1 flex cursor-pointer items-center p-1"
-          style={{ paddingLeft: row.depth > 0 ? `${row.depth * 1.5 + 0.25}rem` : undefined }}
+          style={{ paddingLeft: `${row.depth * 1.5}rem` }}
           onClick={handleNavigate}
         >
+          {/* Chevron-width spacer so leaf rows align with expandable group rows */}
+          <span className="mr-1 h-4 w-4 shrink-0" />
           {selecting && (
             <span className="mr-2 inline-flex" onClick={(e) => e.stopPropagation()}>
               <Checkbox

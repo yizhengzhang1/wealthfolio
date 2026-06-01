@@ -200,7 +200,9 @@ export const HoldingsTableMobile = ({
         onClick={() => isNavigable && handleNavigate(holding)}
       >
         <div className="flex items-center justify-between">
-          <div className="flex flex-1 items-center gap-3 overflow-hidden">
+          <div className="flex flex-1 items-center gap-2 overflow-hidden">
+            {/* Chevron-width spacer so leaf cards align with expandable group/strategy cards */}
+            <span className="h-4 w-4 shrink-0" />
             <TickerAvatar symbol={avatarSymbol} className="h-10 w-10" />
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center gap-1.5">
