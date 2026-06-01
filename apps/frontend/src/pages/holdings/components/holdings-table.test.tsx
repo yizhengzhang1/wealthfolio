@@ -333,4 +333,45 @@ describe("HoldingsTable create-strategy from selection", () => {
       }),
     );
   });
+
+  it("clears leg selection when strategy sub-grouping is turned off", async () => {
+    const A = makeHolding({ id: "a", symbol: "ASTS260612C00100000", mv: 10 });
+    const B = makeHolding({ id: "b", symbol: "ASTS260920P00050000", mv: 20 });
+    renderTable([A, B]);
+
+    await userEvent.click(screen.getByText("Select legs"));
+    await userEvent.click(screen.getAllByRole("checkbox")[0]);
+    await userEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect(screen.getByText(/Create strategy/i)).toBeInTheDocument();
+
+    // Flipping Strategy -> Legs must reset selecting + selectedLegs, hiding the
+    // floating button and the leg checkboxes.
+    await userEvent.click(screen.getByText("Legs"));
+    expect(screen.queryByText(/Create strategy/i)).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+
+    // Re-opening selection shows no pre-checked legs (selectedLegs was emptied,
+    // not merely hidden).
+    await userEvent.click(screen.getByText("Strategy"));
+    await userEvent.click(screen.getByText("Select legs"));
+    const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes.every((b) => !b.checked)).toBe(true);
+  });
+
+  it("clears leg selection when grouping is switched to Flat", async () => {
+    const A = makeHolding({ id: "a", symbol: "ASTS260612C00100000", mv: 10 });
+    const B = makeHolding({ id: "b", symbol: "ASTS260920P00050000", mv: 20 });
+    renderTable([A, B]);
+
+    await userEvent.click(screen.getByText("Select legs"));
+    await userEvent.click(screen.getAllByRole("checkbox")[0]);
+    await userEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect(screen.getByText(/Create strategy/i)).toBeInTheDocument();
+
+    // Switching off underlying grouping also unmounts the selection UI, so the
+    // floating button (which only checks `selecting`) must not linger.
+    await userEvent.click(screen.getByText("Flat"));
+    expect(screen.queryByText(/Create strategy/i)).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  });
 });

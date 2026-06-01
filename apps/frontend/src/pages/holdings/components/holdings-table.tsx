@@ -89,6 +89,7 @@ export const HoldingsTable = ({
   setShowTotalReturn?: (value: boolean) => void;
   onClassify?: (holding: Holding) => void;
 }) => {
+  const navigate = useNavigate();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
   const [showConvertedValues, setShowConvertedValues] = usePersistentState<boolean>(
@@ -234,6 +235,7 @@ export const HoldingsTable = ({
       <DataTable
         data={tableData}
         columns={getColumns(
+          navigate,
           isBalanceHidden,
           showConvertedValues,
           showTotalReturn,
@@ -269,7 +271,14 @@ export const HoldingsTable = ({
           <div className="mr-2 flex items-center gap-2">
             <AnimatedToggleGroup
               value={groupByUnderlying ? "grouped" : "flat"}
-              onValueChange={(value) => setGroupByUnderlying(value === "grouped")}
+              onValueChange={(value) => {
+                const grouped = value === "grouped";
+                setGroupByUnderlying(grouped);
+                if (!grouped) {
+                  setSelecting(false);
+                  setSelectedLegs({});
+                }
+              }}
               items={[
                 { value: "grouped", label: "Grouped" },
                 { value: "flat", label: "Flat" },
@@ -280,7 +289,14 @@ export const HoldingsTable = ({
             {groupByUnderlying && (
               <AnimatedToggleGroup
                 value={groupByStrategy ? "strategy" : "legs"}
-                onValueChange={(value) => setGroupByStrategy(value === "strategy")}
+                onValueChange={(value) => {
+                  const next = value === "strategy";
+                  setGroupByStrategy(next);
+                  if (!next) {
+                    setSelecting(false);
+                    setSelectedLegs({});
+                  }
+                }}
                 items={[
                   { value: "strategy", label: "Strategy" },
                   { value: "legs", label: "Legs" },
@@ -367,6 +383,7 @@ export const HoldingsTable = ({
 export default HoldingsTable;
 
 const getColumns = (
+  navigate: ReturnType<typeof useNavigate>,
   isHidden: boolean,
   showConvertedValues: boolean,
   showTotalReturn: boolean,
@@ -390,7 +407,6 @@ const getColumns = (
       label: "Position",
     },
     cell: ({ row }) => {
-      const navigate = useNavigate();
       const data = row.original;
 
       if (isStrategyGroupRow(data)) {
@@ -799,7 +815,6 @@ const getColumns = (
     enableHiding: false,
     header: () => null,
     cell: ({ row }) => {
-      const navigate = useNavigate();
       const data = row.original;
 
       if (isHoldingGroupRow(data)) {
