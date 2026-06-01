@@ -267,6 +267,38 @@ describe("stock-based: covered-call / protective-put", () => {
     expect(strategies).toHaveLength(0);
     expect(looseLegs).toHaveLength(2);
   });
+
+  it("covered call honors a non-100 multiplier: 50 shares + short 1 call (mult 50) covers", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 50 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1, contractMultiplier: 50 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies[0].strategyType).toBe("covered-call");
+  });
+
+  it("non-100 multiplier under coverage: 49 shares + short 1 call (mult 50) -> loose", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 49 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1, contractMultiplier: 50 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+
+  it("multiplier is honored not hardcoded 100: 100 shares + short 1 call (mult 150) -> loose", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 100 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1, contractMultiplier: 150 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(strategies).toHaveLength(0);
+    expect(looseLegs).toHaveLength(2);
+  });
+
+  it("non-100 multiplier covered: 150 shares + short 1 call (mult 150) covers", () => {
+    const stock = makeHolding({ id: "s", symbol: "ASTS", quantity: 150 });
+    const c = makeHolding({ id: "c", symbol: call(110, EXP_A), quantity: -1, contractMultiplier: 150 });
+    const { strategies, looseLegs } = detectStrategies([stock, c], NO_OVERRIDES);
+    expect(looseLegs).toHaveLength(0);
+    expect(strategies[0].strategyType).toBe("covered-call");
+  });
 });
 
 describe("stock-based: collar", () => {
