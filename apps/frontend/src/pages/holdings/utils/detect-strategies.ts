@@ -386,6 +386,9 @@ export function detectStrategies(
   }
 
   // ---- collar: stock + short call(high) + long put(low) ----------------
+  // Spec §5.3 lists collar before the 2-leg pass; running it after is safe because a
+  // collar's option legs (short call + long put) can never satisfy the same-type
+  // vertical/calendar nor same-side straddle/strangle classifiers, so none are consumed early.
   for (const stock of pool) {
     if (consumed.has(stock) || forcedLoose.has(stock) || !stock.isStock || !stock.isLong) continue;
     const calls = pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f) && f.isOption && f.occ!.optionType === "CALL" && f.isShort);
