@@ -10,7 +10,8 @@ import {
   type HoldingGroupRow,
   type HoldingRow as HoldingRowItem,
 } from "@/pages/holdings/utils/group-by-underlying";
-import { isStrategyGroupRow } from "@/pages/holdings/utils/detect-strategies";
+import { isStrategyGroupRow, type StrategyGroupRow } from "@/pages/holdings/utils/detect-strategies";
+import { useOptionStrategies } from "@/hooks/use-option-strategies";
 import { cn } from "@/lib/utils";
 import {
   AmountDisplay,
@@ -180,6 +181,95 @@ function GroupHoldingRow({
   );
 }
 
+interface StrategyHoldingRowProps {
+  strategy: StrategyGroupRow;
+  baseCurrency: string;
+  isHidden?: boolean;
+  showTotalReturn: boolean;
+  expanded: boolean;
+  showName: boolean;
+  onToggle: () => void;
+  onLegClick: (leg: Holding) => void;
+}
+
+function StrategyHoldingRow({
+  strategy,
+  baseCurrency,
+  isHidden,
+  showTotalReturn,
+  expanded,
+  showName,
+  onToggle,
+  onLegClick,
+}: StrategyHoldingRowProps) {
+  const gainAmount = showTotalReturn ? strategy.totalGainBase : strategy.dayChangeBase;
+  const gainPercent = showTotalReturn ? (strategy.totalGainPct ?? 0) : (strategy.dayChangePct ?? 0);
+  return (
+    <div>
+      <div
+        className="border-border hover:bg-muted/30 group flex cursor-pointer items-center justify-between gap-3 border-b py-3 transition-colors last:border-0"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && onToggle()}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Icons.ChevronRight
+            className={cn(
+              "text-muted-foreground h-4 w-4 shrink-0 transition-transform",
+              expanded && "rotate-90",
+            )}
+          />
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold">{strategy.name}</span>
+            <span className="text-muted-foreground text-xs">
+              {strategy.netCashBase >= 0
+                ? `Net debit ${Math.abs(strategy.netCashBase).toFixed(2)}`
+                : `Net credit ${Math.abs(strategy.netCashBase).toFixed(2)}`}
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <AmountDisplay
+            value={strategy.marketValueBase}
+            currency={baseCurrency}
+            isHidden={isHidden}
+            className="text-sm font-semibold"
+          />
+          <div className="flex items-center gap-2">
+            <GainAmount
+              value={gainAmount}
+              currency={baseCurrency}
+              displayCurrency={false}
+              className="text-xs"
+            />
+            <GainPercent
+              value={gainPercent}
+              variant="badge"
+              className="min-w-[60px] justify-center text-xs"
+            />
+          </div>
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-border ml-3 border-l pl-3">
+          {strategy.subRows.map((leg) => (
+            <HoldingRow
+              key={leg.id}
+              holding={leg}
+              baseCurrency={baseCurrency}
+              isHidden={isHidden}
+              showTotalReturn={showTotalReturn}
+              showName={showName}
+              onClick={() => onLegClick(leg)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface StackedAvatarsProps {
   holdings: HoldingRowItem[];
   totalRemaining: number;
@@ -299,6 +389,20 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     setExpandedKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
+  const [groupByStrategy, setGroupByStrategy] = usePersistentState<boolean>(
+    "dashboard-holdings-widget-group-by-strategy",
+    true,
+  );
+  const [expandedStrategies, setExpandedStrategies] = usePersistentState<string[]>(
+    "dashboard-holdings-widget-expanded-strategies",
+    [],
+  );
+  const toggleStrategy = (id: string) =>
+    setExpandedStrategies((prev) =>
+      prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id],
+    );
+  const accountIds = Array.from(new Set(holdings.map((h) => h.accountId).filter(Boolean)));
+  const { data: overrides = [] } = useOptionStrategies(accountIds);
 
   // Filter out cash holdings and alternative assets, optionally group same-underlying
   // positions into one summary row, then sort by market value or gain.
@@ -313,7 +417,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     });
 
     const base: HoldingRowItem[] = groupByUnderlying
-      ? groupHoldingsByUnderlying(filtered)
+      ? groupHoldingsByUnderlying(filtered, { groupByStrategy, overrides })
       : filtered;
 
     const valueOf = (it: HoldingRowItem) =>
@@ -332,7 +436,7 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
     return [...base].sort((a, b) =>
       sortBy === "gain" ? gainOf(b) - gainOf(a) : valueOf(b) - valueOf(a),
     );
-  }, [holdings, sortBy, showTotalReturn, groupByUnderlying]);
+  }, [holdings, sortBy, showTotalReturn, groupByUnderlying, groupByStrategy, overrides]);
 
   // Show one extra holding directly rather than displaying "+1 more"
   const displayCount =
@@ -390,6 +494,29 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
                     )}
                   >
                     {groupByUnderlying === v && (
+                      <span className="bg-primary-foreground h-1.5 w-1.5 rounded-full" />
+                    )}
+                  </span>
+                </button>
+              ))}
+              <div className="bg-border/70 mx-2 my-1.5 h-px" />
+              <p className="text-muted-foreground px-2 py-1.5 text-xs font-medium uppercase tracking-wider">
+                Strategy sub-grouping
+              </p>
+              {([true, false] as const).map((v) => (
+                <button
+                  key={`strat-${String(v)}`}
+                  className="hover:bg-accent flex w-full items-center justify-between rounded-xl px-3 py-3 text-sm font-medium transition-colors"
+                  onClick={() => setGroupByStrategy(v)}
+                >
+                  {v ? "Strategy" : "Legs"}
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 items-center justify-center rounded-full border-2",
+                      groupByStrategy === v ? "border-primary bg-primary" : "border-muted-foreground",
+                    )}
+                  >
+                    {groupByStrategy === v && (
                       <span className="bg-primary-foreground h-1.5 w-1.5 rounded-full" />
                     )}
                   </span>
@@ -496,21 +623,35 @@ export function TopHoldings({ holdings, isLoading, baseCurrency }: TopHoldingsPr
               />
               {expanded && (
                 <div className="border-border ml-3 border-l pl-3">
-                  {item.subRows
-                    .filter((leg): leg is Holding => !isStrategyGroupRow(leg))
-                    .map((leg) => (
+                  {item.subRows.map((sub) =>
+                    isStrategyGroupRow(sub) ? (
+                      <StrategyHoldingRow
+                        key={sub.id}
+                        strategy={sub}
+                        baseCurrency={baseCurrency}
+                        isHidden={isBalanceHidden}
+                        showTotalReturn={showTotalReturn}
+                        expanded={expandedStrategies.includes(sub.id)}
+                        onToggle={() => toggleStrategy(sub.id)}
+                        onLegClick={(leg) =>
+                          navigate(`/holdings/${encodeURIComponent(leg.instrument?.id ?? leg.id)}`)
+                        }
+                        showName={displayMode === "name"}
+                      />
+                    ) : (
                       <HoldingRow
-                        key={leg.id}
-                        holding={leg}
+                        key={sub.id}
+                        holding={sub}
                         baseCurrency={baseCurrency}
                         isHidden={isBalanceHidden}
                         showTotalReturn={showTotalReturn}
                         showName={displayMode === "name"}
                         onClick={() =>
-                          navigate(`/holdings/${encodeURIComponent(leg.instrument?.id ?? leg.id)}`)
+                          navigate(`/holdings/${encodeURIComponent(sub.instrument?.id ?? sub.id)}`)
                         }
                       />
-                    ))}
+                    ),
+                  )}
                 </div>
               )}
             </div>
