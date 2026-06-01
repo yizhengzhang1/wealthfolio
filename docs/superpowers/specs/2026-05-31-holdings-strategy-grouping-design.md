@@ -326,3 +326,15 @@ function detectStrategies(
 4. 桌面表渲染 + 副开关 + 覆盖层接线(改名/取消分组/建组)。
 5. 移动卡片 + 仪表盘嵌套。
 6. 全量测试 + type-check + lint + cargo test。
+
+---
+
+## 13. 已知限制:多账户 override scope(2026-06-01 决定暂不修)
+
+聚合/portfolio scope 下,后端把 holding 的 `account_id` 覆盖成合成 scope_id(`all` / `portfolio:<id>` / `accounts:<sha256>`),真实账户挪到 `source_account_ids`(`holdings_service.rs`)。持仓页默认 `{type:"all"}`,故可编辑桌面表通常运行在聚合 scope,`holding.accountId === "all"`。override 的 query / create / match 三处都用同一个 `accountId`,因此**单 scope 内自洽、单账户用户编辑完全正常、无可见 bug**。
+
+仅在**多账户**场景暴露三类问题:① "all" scope 下不同真实账户的同 OCC 腿会被一个 override 误合并成跨券商策略;② 在 "all" 视图建的 override 切到单账户视图按真实账户 ID 查不到而"消失",反之亦然;③ `accounts:<hash>` scope_id 随多选集变化,改选即让旧 override 失效。
+
+**彻底修(Option A)** 需后端在聚合期权腿持仓上暴露 per-leg 真实账户字段(当前没有)+ 前端三处 query 派生改用 `sourceAccountIds` + create/match 改 + 已存 override 的数据迁移;query/create/match 必须 lockstep,naive `accountId→sourceAccountIds` 单点替换会**破坏**当前自洽的 round-trip(风险高)。**Option B** 为聚合 scope 下禁用编辑(只读),代价是默认视图不能改名/拆组/建组。
+
+用户为单账户自托管,当前无影响,故**暂不修**;真正需要多账户编辑时再按 Option A 实现。
