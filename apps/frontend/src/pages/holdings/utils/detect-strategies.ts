@@ -386,20 +386,20 @@ export function detectStrategies(
   }
 
   // ---- collar: stock + short call(high) + long put(low) ----------------
-  for (let i = 0; i < pool.length; i++) {
-    if (consumed.has(pool[i]) || forcedLoose.has(pool[i]) || !pool[i].isStock || !pool[i].isLong) continue;
+  for (const stock of pool) {
+    if (consumed.has(stock) || forcedLoose.has(stock) || !stock.isStock || !stock.isLong) continue;
     const calls = pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f) && f.isOption && f.occ!.optionType === "CALL" && f.isShort);
     const puts = pool.filter((f) => !consumed.has(f) && !forcedLoose.has(f) && f.isOption && f.occ!.optionType === "PUT" && f.isLong);
     let matched = false;
     for (const c of calls) {
       for (const p of puts) {
-        if (classifyCollar(pool[i], c, p)) {
-          consumed.add(pool[i]);
+        if (classifyCollar(stock, c, p)) {
+          consumed.add(stock);
           consumed.add(c);
           consumed.add(p);
           strategies.push(
             buildStrategyRow(underlyingKey, "collar", defaultStrategyLabel("collar"), "auto", [
-              pool[i].holding,
+              stock.holding,
               c.holding,
               p.holding,
             ]),
