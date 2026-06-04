@@ -1486,6 +1486,7 @@ mod tests {
             last_updated: now,
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         };
         let positions_json =
             serde_json::to_string(&HashMap::from([("AAPL".to_string(), position)]))

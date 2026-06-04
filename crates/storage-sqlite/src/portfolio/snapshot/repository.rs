@@ -1239,6 +1239,7 @@ mod tests {
             last_updated: now,
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         }
     }
 

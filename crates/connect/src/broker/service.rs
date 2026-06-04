@@ -1029,6 +1029,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier,
+                realized_gain: Decimal::ZERO,
             };
             positions_map.insert(asset_id, position);
         }
@@ -1566,6 +1567,7 @@ mod tests {
             last_updated: now,
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         }
     }
 

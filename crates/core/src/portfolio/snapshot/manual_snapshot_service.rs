@@ -208,6 +208,7 @@ impl ManualSnapshotService {
                 // OptionSpec, 1 otherwise). Previously hardcoded to 1, which
                 // made option holdings under-value by 100x.
                 contract_multiplier: asset.contract_multiplier(),
+                realized_gain: Decimal::ZERO,
             };
             positions.insert(asset.id, position);
         }

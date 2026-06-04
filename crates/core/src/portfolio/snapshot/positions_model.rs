@@ -59,6 +59,12 @@ pub struct Position {
     /// Defaults to 1 for non-derivative positions and for snapshots created before this field existed.
     #[serde(default = "default_multiplier")]
     pub contract_multiplier: Decimal,
+    /// Cumulative realized P&L for this position in the asset's currency, fed by
+    /// the snapshot/broker import path (e.g. IBKR get_account_trades). Zero for
+    /// activity-only positions. `#[serde(default)]` keeps old snapshots (which
+    /// predate this field) deserializing to zero — migration-safe.
+    #[serde(default)]
+    pub realized_gain: Decimal,
 }
 
 fn default_multiplier() -> Decimal {
@@ -81,6 +87,7 @@ impl Default for Position {
             last_updated: Utc::now(),
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         }
     }
 }
@@ -245,6 +252,7 @@ impl Position {
             last_updated: date,
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         }
     }
 
@@ -271,6 +279,7 @@ impl Position {
             last_updated: date,
             is_alternative,
             contract_multiplier,
+            realized_gain: Decimal::ZERO,
         }
     }
 

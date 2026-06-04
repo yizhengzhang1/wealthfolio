@@ -846,6 +846,7 @@ mod tests {
             last_updated: Utc::now(),
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         };
         previous_snapshot
             .positions
@@ -3347,6 +3348,7 @@ mod tests {
             last_updated: Utc::now(),
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            realized_gain: Decimal::ZERO,
         };
         previous_snapshot
             .positions
@@ -4309,6 +4311,7 @@ mod tests {
                 last_updated: Utc::now(),
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
 

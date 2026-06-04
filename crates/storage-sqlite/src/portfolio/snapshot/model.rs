@@ -205,6 +205,7 @@ impl SnapshotPositionRecord {
             is_alternative: self.is_alternative != 0,
             contract_multiplier: Decimal::from_str(&self.contract_multiplier)
                 .unwrap_or(Decimal::ONE),
+            realized_gain: Decimal::ZERO,
         }
     }
 }

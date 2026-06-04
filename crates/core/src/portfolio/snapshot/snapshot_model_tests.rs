@@ -259,6 +259,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         snapshot1.positions = positions1;
@@ -281,6 +282,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         snapshot2.positions = positions2;
@@ -315,6 +317,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         snapshot1.positions = positions1;
@@ -337,6 +340,7 @@ mod tests {
                 last_updated: Utc::now(), // Different timestamp (should be ignored)
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         snapshot2.positions = positions2;
@@ -372,6 +376,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         snapshot1.positions = positions1;
@@ -380,5 +385,49 @@ mod tests {
         let snapshot2 = AccountStateSnapshot::default();
 
         assert!(!snapshot1.is_content_equal(&snapshot2));
+    }
+
+    #[test]
+    fn position_deserializes_realized_gain_default_zero_for_old_snapshot() {
+        use crate::portfolio::snapshot::Position;
+        use rust_decimal::Decimal;
+
+        // A pre-existing snapshot JSON that predates the realized_gain field.
+        let json = r#"{
+            "id": "POS-AAPL-acc1",
+            "accountId": "acc1",
+            "assetId": "AAPL",
+            "quantity": "10",
+            "averageCost": "100",
+            "totalCostBasis": "1000",
+            "currency": "USD",
+            "inceptionDate": "2024-01-01T00:00:00Z",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "lastUpdated": "2024-01-01T00:00:00Z"
+        }"#;
+        let pos: Position = serde_json::from_str(json).unwrap();
+        assert_eq!(pos.realized_gain, Decimal::ZERO);
+    }
+
+    #[test]
+    fn position_deserializes_explicit_realized_gain() {
+        use crate::portfolio::snapshot::Position;
+        use rust_decimal_macros::dec;
+
+        let json = r#"{
+            "id": "POS-AAPL-acc1",
+            "accountId": "acc1",
+            "assetId": "AAPL",
+            "quantity": "10",
+            "averageCost": "100",
+            "totalCostBasis": "1000",
+            "currency": "USD",
+            "inceptionDate": "2024-01-01T00:00:00Z",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "lastUpdated": "2024-01-01T00:00:00Z",
+            "realizedGain": "250.5"
+        }"#;
+        let pos: Position = serde_json::from_str(json).unwrap();
+        assert_eq!(pos.realized_gain, dec!(250.5));
     }
 }

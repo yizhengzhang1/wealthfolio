@@ -369,6 +369,7 @@ mod tests {
                 last_updated: Utc::now(),
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
 
@@ -443,6 +444,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         positions.insert(
@@ -461,6 +463,7 @@ mod tests {
                 last_updated: now,
                 is_alternative: true,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
         let snapshot = AccountStateSnapshot {
@@ -589,6 +592,7 @@ mod tests {
                 last_updated: acquisition_date,
                 is_alternative: false,
                 contract_multiplier: Decimal::ONE,
+                realized_gain: Decimal::ZERO,
             },
         );
 
