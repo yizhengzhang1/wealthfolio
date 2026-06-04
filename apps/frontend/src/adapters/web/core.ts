@@ -65,6 +65,7 @@ export const COMMANDS: CommandMap = {
   calculate_performance_history: { method: "POST", path: "/performance/history" },
   calculate_performance_summary: { method: "POST", path: "/performance/summary" },
   get_income_summary: { method: "POST", path: "/income/summary/query" },
+  get_realized_pnl: { method: "GET", path: "/realized-pnl" },
   // Goals
   get_goals: { method: "GET", path: "/goals" },
   get_goal: { method: "GET", path: "/goals" },
@@ -689,6 +690,15 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       }
       break;
     }
+      case "get_realized_pnl": {
+        const p = payload as { filter?: { type: string; accountId?: string } };
+        url =
+          p?.filter?.type === "account" && p.filter.accountId
+            ? `${API_PREFIX}/realized-pnl?accountId=${encodeURIComponent(p.filter.accountId)}`
+            : `${API_PREFIX}/realized-pnl`;
+        method = "GET";
+        break;
+      }
     case "get_goal":
     case "delete_goal": {
       const { goalId } = payload as { goalId: string };

@@ -13,6 +13,7 @@ import type {
   CheckHoldingsImportResult,
   SnapshotInfo,
   AssetLotView,
+  RealizedPnl,
 } from "@/lib/types";
 
 import { invoke, logger } from "./platform";
@@ -31,6 +32,10 @@ export const getHoldings = async (filter: AccountScope): Promise<Holding[]> => {
 
 export const getIncomeSummary = async (filter?: AccountScope): Promise<IncomeSummary[]> => {
   return invoke<IncomeSummary[]>("get_income_summary", { filter });
+};
+
+export const getRealizedPnl = async (filter?: AccountScope): Promise<RealizedPnl> => {
+  return invoke<RealizedPnl>("get_realized_pnl", { filter });
 };
 
 export const getHistoricalValuations = async (

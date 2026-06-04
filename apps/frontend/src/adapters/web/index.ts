@@ -163,6 +163,7 @@ export {
   getIncomeSummary,
   getLatestValuations,
   getPortfolioAllocations,
+  getRealizedPnl,
   getSnapshotByDate,
   getSnapshots,
   importHoldingsCsv,
