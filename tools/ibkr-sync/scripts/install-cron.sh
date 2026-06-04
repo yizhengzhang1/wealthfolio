@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Install (or refresh) the hourly cron entry for the IBKR sync.
+# Install (or refresh) the cron entry for the IBKR sync.
 # Idempotent: safe to re-run; it replaces any pre-existing entry with the
 # IBKR_SYNC_TAG marker.
+#
+# Schedule defaults to hourly. Override with the first arg or $IBKR_SYNC_CRON,
+# e.g. install-cron.sh "0 10,12,22 * * *" (cron uses the host's local time).
 set -euo pipefail
 
 IBKR_SYNC_TAG="# managed-by:ibkr-sync"
+CRON_SCHEDULE="${1:-${IBKR_SYNC_CRON:-0 * * * *}}"
 # Resolve run-hourly.sh next to this installer — host-portable, no hardcoded path.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPT="$SCRIPT_DIR/run-hourly.sh"
-CRON_LINE="0 * * * * $SCRIPT  $IBKR_SYNC_TAG"
+CRON_LINE="$CRON_SCHEDULE $SCRIPT  $IBKR_SYNC_TAG"
 
 # Snapshot existing crontab (empty if none), strip our prior entries, append fresh.
 current=$(crontab -l 2>/dev/null || true)
