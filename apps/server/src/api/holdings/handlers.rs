@@ -22,6 +22,7 @@ use wealthfolio_core::{
 };
 
 use crate::{error::ApiResult, main_lib::AppState};
+use wealthfolio_core::settings::SettingsServiceTrait;
 
 use super::dto::{
     AccountIdQuery, AllocationFilterBody, AllocationHoldingsQuery, AssetHoldingsQuery,
@@ -818,6 +819,17 @@ async fn import_single_snapshot_impl(
         })
         .await
         .map_err(|e| anyhow::anyhow!("Failed to save snapshot: {}", e))?;
+
+    // Persist the per-underlying realized P&L blob in app_settings KV.
+    // Empty list still writes "[]" so a re-import clears stale entries.
+    let realized_key = format!("realized_pnl:{}", account_id);
+    let realized_json = serde_json::to_string(&snapshot_input.realized)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize realized P&L: {}", e))?;
+    state
+        .settings_service
+        .set_setting_value(&realized_key, &realized_json)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to store realized P&L: {}", e))?;
 
     Ok(())
 }
