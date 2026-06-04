@@ -901,6 +901,25 @@ export interface IncomeSummary {
   yoyGrowth: number | null; // Changed from optional to nullable
 }
 
+export interface RealizedPnlEntry {
+  underlying: string;
+  currency: string;
+  realized: {
+    local: number;
+    base: number;
+  };
+}
+
+export interface RealizedPnl {
+  /** Base currency the `base` amounts are expressed in (a user setting; not
+   *  assumed USD). Used to label base-currency amounts. */
+  baseCurrency: string;
+  entries: RealizedPnlEntry[];
+  total: {
+    base: number;
+  };
+}
+
 // Define custom DateRange type matching react-day-picker's
 export interface DateRange {
   from: Date | undefined;
