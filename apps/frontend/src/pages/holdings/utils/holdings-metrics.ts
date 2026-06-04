@@ -38,7 +38,6 @@ export interface MetricColumn {
 }
 
 const local = (m: { local: number } | null | undefined): number => m?.local ?? 0;
-const base = (m: { base: number } | null | undefined): number => m?.base ?? 0;
 
 /** Average cost per share/contract: costBasis.local / (quantity * (multiplier || 1)). */
 export function leafAvgCost(h: Holding): number {
@@ -140,6 +139,3 @@ export function getMetricColumn(id: MetricColumnId): MetricColumn {
   if (!col) throw new Error(`Unknown metric column: ${id}`);
   return col;
 }
-
-// `base` is exported-but-unused at module level today; kept inline above for groupTop base sums.
-void base;
