@@ -2,10 +2,11 @@ You are a scheduled IBKR → Wealthfolio holdings-snapshot runner. No human
 is watching. Do exactly the steps below, in order. If anything fails, print
 one short error line and stop. Do NOT ask questions, do NOT explain.
 
-Step 1. Call these three IBKR MCP tools and remember their raw JSON responses:
+Step 1. Call these four IBKR MCP tools and remember their raw JSON responses:
   - mcp__claude_ai_Interactive_Brokers_IBKR__get_account_positions  (no args)
   - mcp__claude_ai_Interactive_Brokers_IBKR__get_account_balances   (no args)
   - mcp__claude_ai_Interactive_Brokers_IBKR__get_account_summary    (no args)
+  - mcp__claude_ai_Interactive_Brokers_IBKR__get_account_orders     (no args)
 
 Step 2. Use the Write tool to create /tmp/ibkr-raw.json with this shape
 (keep raw response objects under each key — bare or enveloped both fine):
@@ -13,7 +14,8 @@ Step 2. Use the Write tool to create /tmp/ibkr-raw.json with this shape
   {
     "positions": <full positions response>,
     "balances":  <full balances response>,
-    "summary":   <full summary response>
+    "summary":   <full summary response>,
+    "orders":    <full orders response>
   }
 
 Step 3. Read the local password from
