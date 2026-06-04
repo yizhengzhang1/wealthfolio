@@ -49,13 +49,25 @@ RUN xx-apk add --no-cache musl-dev gcc openssl-dev openssl-libs-static sqlite-de
 # Install rust target
 RUN rustup target add $(xx-cargo --print-target-triple)
 
-# Leverage Docker layer caching for dependencies
+# Leverage Docker layer caching for dependencies: `cargo fetch` below must
+# depend only on the manifests, NOT on application source. Copy just
+# apps/server/Cargo.toml here (the real source is copied later, before the
+# build) so a pure source change no longer invalidates — and re-runs — the slow
+# `cargo fetch` layer over the hotspot proxy.
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-COPY apps/server ./apps/server
+COPY apps/server/Cargo.toml ./apps/server/Cargo.toml
 # Stub out apps/tauri so the workspace resolves (not built in Docker)
 COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
+# Network resilience for `cargo fetch` over a flaky/slow proxy (local build env):
+# don't abort on <10 B/s stalls, lengthen the timeout, retry, and avoid HTTP/2
+# multiplexing which some proxies mishandle. Sparse registry for a small index.
+ENV CARGO_NET_RETRY=10 \
+    CARGO_HTTP_TIMEOUT=600 \
+    CARGO_HTTP_LOW_SPEED_LIMIT=0 \
+    CARGO_HTTP_MULTIPLEXING=false \
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 RUN mkdir -p apps/server/src && \
     echo "fn main(){}" > apps/server/src/main.rs && \
     xx-cargo fetch --manifest-path apps/server/Cargo.toml
