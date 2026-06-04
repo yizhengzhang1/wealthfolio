@@ -86,10 +86,16 @@ backfill).
 
 ### Layer ② Backend (Rust — realized plumbing)
 
-- `SnapshotPositionInput` (`manual_snapshot_service.rs`) and `Position`
-  (`positions_model.rs`): add `realized_gain: Decimal` in the asset's currency,
-  `#[serde(default)]` = 0 so existing snapshots deserialize unchanged.
-- Snapshot import: carry `input.realized_gain` → `Position.realized_gain`.
+- Import chain (verified names): `HoldingsPositionInput` (server DTO,
+  `apps/server/src/api/holdings/dto.rs`) → `ManualHoldingInput` (core,
+  `manual_snapshot_service.rs`) → `Position` (`positions_model.rs`). Add
+  `realized_gain: Decimal` in the asset's currency, `#[serde(default)]` = 0, to
+  each so existing snapshots/payloads deserialize unchanged. `rust_decimal` uses
+  the `serde-float` feature, so `realizedGain` is sent/received as a **bare JSON
+  number** (unlike the sibling `quantity`/`avgCost` which are JSON strings) — the
+  ibkr-sync attach step (Layer ③) must send a number.
+- Snapshot import: carry `input.realized_gain` → `ManualHoldingInput` →
+  `Position.realized_gain`.
 - `holdings_service.rs` (holding construction ~L267): set
   `realized_gain: Some(MonetaryValue { local: snapshot_pos.realized_gain, base: 0 })`.
   The multi-account merge already sums `realized_gain` (L718) — keep.
@@ -106,19 +112,24 @@ backfill).
 
 - `scripts/routine-prompt.txt`: add `get_account_trades` (lookback window,
   overlapping prior runs) to the allowed tools and the fetch step.
-- `src/state.ts`: extend the persisted state (`state/positions-state.json`) with
-  a realized ledger — a set of seen `trade_id`s plus a running
-  `cumulativeRealized` per asset key. Dedup by `trade_id` so overlapping windows
-  never double-count.
+- `src/state.ts` / `src/wealthfolio.ts`: extend the persisted state
+  (`state/positions-state.json`) with a realized ledger — a set of seen
+  `trade_id`s plus a running `cumulativeRealized` per asset key — and add
+  `realizedGain?: number` to the tool's own `HoldingsPositionInput` client type.
+  Dedup by `trade_id` so overlapping windows never double-count.
 - `src/sync.ts`: fetch trades, for each unseen `trade_id` add its `realized_pnl`
   to `cumulativeRealized[assetKey]`, mark it seen, then attach
-  `cumulativeRealized[assetKey]` as `realizedGain` on the matching snapshot
-  position.
-- `src/mapping.ts`: map trade `symbol`/`sec_type` to the same `assetId` the
-  snapshot uses (including option OCC symbols), so realized lands on the right
-  row.
-- One-time backfill: a manual wide-window run (e.g. 365 days, bounded by IBKR
-  API depth) seeds `cumulativeRealized` before the hourly job takes over.
+  `cumulativeRealized[assetKey]` as `realizedGain` (a number) on the matching
+  snapshot position.
+- `src/mapping.ts`: map trade `symbol`/`sec_type` to the asset key. **Known Phase
+  B limitation:** IBKR trade rows carry only a short `symbol` + `sec_type`, not
+  the full 21-char OCC, so option realized is accumulated under `OPT:<symbol>`
+  and only **stock** realized is stamped onto specific snapshot rows. Resolving
+  option realized to individual contracts is deferred.
+- One-time backfill: IBKR `get_account_trades` has no arbitrary day range — its
+  period enums are TODAY / DAYS_7/30/60/90 / MTD / YTD / per-quarter. Seed
+  `cumulativeRealized` with a manual `YEAR_TO_DATE` run (merge per-quarter periods
+  for >1yr) before the hourly job takes over.
 
 ## Data flow
 
