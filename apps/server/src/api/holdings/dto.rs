@@ -173,6 +173,10 @@ pub struct HoldingsPositionInput {
     pub provider_symbol: Option<String>,
     /// Resolved asset ID from asset review step
     pub asset_id: Option<String>,
+    /// Cumulative realized P&L in the position's currency (broker-fed, e.g.
+    /// IBKR). `#[serde(default)]` keeps old payloads (no realizedGain) at zero.
+    #[serde(default)]
+    pub realized_gain: rust_decimal::Decimal,
 }
 
 /// A single snapshot from CSV import (one date's worth of holdings)
@@ -232,4 +236,35 @@ pub struct CheckHoldingsImportResult {
     pub existing_dates: Vec<String>,
     pub symbols: Vec<SymbolCheckResult>,
     pub validation_errors: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HoldingsPositionInput;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn position_input_defaults_realized_gain_to_zero() {
+        // Old ibkr-sync / CSV payload without realizedGain.
+        let json = r#"{
+            "symbol": "AAPL",
+            "quantity": "10",
+            "currency": "USD"
+        }"#;
+        let input: HoldingsPositionInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.realized_gain, Decimal::ZERO);
+    }
+
+    #[test]
+    fn position_input_parses_realized_gain() {
+        let json = r#"{
+            "symbol": "AAPL",
+            "quantity": "10",
+            "currency": "USD",
+            "realizedGain": 250.5
+        }"#;
+        let input: HoldingsPositionInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.realized_gain, Decimal::from_str("250.5").unwrap());
+    }
 }

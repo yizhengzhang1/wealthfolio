@@ -853,6 +853,7 @@ pub async fn save_manual_holdings(
             instrument_type: holding.instrument_type,
             provider_id: holding.provider_id,
             provider_symbol: holding.provider_symbol,
+            realized_gain: Decimal::ZERO,
         });
     }
 
@@ -1238,6 +1239,7 @@ async fn import_single_snapshot(
             instrument_type: pos_input.instrument_type.clone(),
             provider_id: pos_input.provider_id.clone(),
             provider_symbol: pos_input.provider_symbol.clone(),
+            realized_gain: Decimal::ZERO,
         });
     }
 
