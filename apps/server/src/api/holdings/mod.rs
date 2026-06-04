@@ -59,4 +59,8 @@ pub fn router() -> Router<Arc<AppState>> {
             "/realized-pnl",
             get(handlers::get_realized_pnl_for_account),
         )
+        .route(
+            "/realized-pnl/query",
+            post(handlers::get_realized_pnl_for_scope),
+        )
 }

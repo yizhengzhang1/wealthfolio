@@ -552,7 +552,10 @@ pub async fn get_realized_pnl(
             .collect()
     };
 
-    let mut acc: std::collections::HashMap<String, (String, Decimal, bool, Decimal)> =
+    // (underlying, currency) -> (local_sum, base_sum). Keying by currency too
+    // keeps mixed-currency underlyings as distinct rows (parity with the server
+    // handler and the sync's per-underlying-per-currency entries).
+    let mut acc: std::collections::HashMap<(String, String), (Decimal, Decimal)> =
         std::collections::HashMap::new();
 
     for account_id in &account_ids {
@@ -570,29 +573,22 @@ pub async fn get_realized_pnl(
                 .convert_currency(row.realized_local, &row.currency, &base)
                 .unwrap_or_else(|e| {
                     warn!(
-                        "[realized-pnl] no FX rate {}->{}  for {}; base set to 0: {}",
+                        "[realized-pnl] no FX rate {}->{} for {}; base set to 0: {}",
                         row.currency, base, row.underlying, e
                     );
                     Decimal::ZERO
                 });
-            let slot = acc.entry(row.underlying.clone()).or_insert((
-                row.currency.clone(),
-                Decimal::ZERO,
-                true,
-                Decimal::ZERO,
-            ));
-            if slot.2 && slot.0 == row.currency {
-                slot.1 += row.realized_local;
-            } else {
-                slot.2 = false;
-            }
-            slot.3 += base_amount;
+            let slot = acc
+                .entry((row.underlying.clone(), row.currency.clone()))
+                .or_insert((Decimal::ZERO, Decimal::ZERO));
+            slot.0 += row.realized_local;
+            slot.1 += base_amount;
         }
     }
 
     let mut entries: Vec<RealizedPnlEntryDto> = acc
         .into_iter()
-        .map(|(underlying, (currency, local, _c, base_sum))| RealizedPnlEntryDto {
+        .map(|((underlying, currency), (local, base_sum))| RealizedPnlEntryDto {
             underlying,
             currency,
             realized: RealizedAmountsDto { local, base: base_sum },

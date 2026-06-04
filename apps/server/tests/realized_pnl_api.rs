@@ -300,3 +300,204 @@ async fn realized_pnl_degrades_gracefully_on_missing_fx_rate() {
     // Total base = 500 (USD) + 0 (HKD, no rate) = 500.
     assert_eq!(resp["total"]["base"], 500.0);
 }
+
+/// App + a USD-base, USD account, ready for snapshot imports. Holds the build
+/// lock and temp dir for the test's lifetime.
+struct TestApp {
+    app: axum::Router,
+    account_id: String,
+    _temp: tempfile::TempDir,
+    _guard: MutexGuard<'static, ()>,
+}
+
+async fn setup_app_with_usd_account() -> TestApp {
+    let guard = build_state_guard().await;
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("app.db")
+        .to_string_lossy()
+        .into_owned();
+    let addons_root = temp_dir
+        .path()
+        .join("addons")
+        .to_string_lossy()
+        .into_owned();
+    let config = test_config(db_path, addons_root);
+    let state = build_state(&config).await.unwrap();
+    let app = app_router(state, &config);
+
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/settings")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"baseCurrency":"USD"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(r.status().is_success());
+
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/accounts")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"name":"IBKR","accountType":"SECURITIES","currency":"USD","isDefault":true,"isActive":true}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(r.status().is_success());
+    let body = to_bytes(r.into_body(), usize::MAX).await.unwrap();
+    let account: Value = serde_json::from_slice(&body).unwrap();
+    let account_id = account["id"].as_str().unwrap().to_string();
+
+    TestApp {
+        app,
+        account_id,
+        _temp: temp_dir,
+        _guard: guard,
+    }
+}
+
+fn post_import(body: String) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/api/v1/snapshots/import")
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+fn get_realized(account_id: &str) -> Request<Body> {
+    Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/realized-pnl?accountId={account_id}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn post_realized_query(body: String) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/api/v1/realized-pnl/query")
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+/// A plain holdings import that omits the `realized` field (a legacy / CSV
+/// client) must NOT wipe a previously-synced realized blob.
+#[tokio::test]
+async fn realized_pnl_import_without_realized_field_preserves_blob() {
+    let t = setup_app_with_usd_account().await;
+
+    // 1) Sync import carrying realized.
+    let body = format!(
+        r#"{{"accountId":"{id}","snapshots":[{{"date":"2026-06-04","positions":[],"cashBalances":{{}},"realized":[{{"underlying":"AAPL","currency":"USD","realizedLocal":321.0}}]}}]}}"#,
+        id = t.account_id
+    );
+    let r = t.app.clone().oneshot(post_import(body)).await.unwrap();
+    assert!(r.status().is_success(), "sync import failed: {:?}", r.status());
+
+    // 2) A later plain holdings import with NO realized field.
+    let body = format!(
+        r#"{{"accountId":"{id}","snapshots":[{{"date":"2026-06-05","positions":[],"cashBalances":{{}}}}]}}"#,
+        id = t.account_id
+    );
+    let r = t.app.clone().oneshot(post_import(body)).await.unwrap();
+    assert!(r.status().is_success(), "plain import failed: {:?}", r.status());
+
+    // 3) The realized blob must still be intact (not overwritten with []).
+    let r = t.app.clone().oneshot(get_realized(&t.account_id)).await.unwrap();
+    assert_eq!(r.status(), axum::http::StatusCode::OK);
+    let body = to_bytes(r.into_body(), usize::MAX).await.unwrap();
+    let resp: Value = serde_json::from_slice(&body).unwrap();
+    let entries = resp["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "realized blob was wiped by a fieldless import");
+    assert_eq!(entries[0]["underlying"], "AAPL");
+    assert_eq!(entries[0]["realized"]["base"], 321.0);
+}
+
+/// Two realized entries for the same underlying in different currencies must
+/// surface as two distinct rows, not be collapsed into one.
+#[tokio::test]
+async fn realized_pnl_keeps_mixed_currency_same_underlying_separate() {
+    let t = setup_app_with_usd_account().await;
+    let body = format!(
+        r#"{{"accountId":"{id}","snapshots":[{{"date":"2026-06-04","positions":[],"cashBalances":{{}},"realized":[
+            {{"underlying":"X","currency":"USD","realizedLocal":100.0}},
+            {{"underlying":"X","currency":"HKD","realizedLocal":800.0}}
+        ]}}]}}"#,
+        id = t.account_id
+    );
+    let r = t.app.clone().oneshot(post_import(body)).await.unwrap();
+    assert!(r.status().is_success(), "import failed: {:?}", r.status());
+
+    let r = t.app.clone().oneshot(get_realized(&t.account_id)).await.unwrap();
+    assert_eq!(r.status(), axum::http::StatusCode::OK);
+    let body = to_bytes(r.into_body(), usize::MAX).await.unwrap();
+    let resp: Value = serde_json::from_slice(&body).unwrap();
+    let entries = resp["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "mixed-currency underlying was merged");
+    let usd = entries.iter().find(|e| e["currency"] == "USD").expect("USD row");
+    let hkd = entries.iter().find(|e| e["currency"] == "HKD").expect("HKD row");
+    assert_eq!(usd["underlying"], "X");
+    assert_eq!(hkd["underlying"], "X");
+    assert_eq!(usd["realized"]["local"], 100.0);
+    assert_eq!(usd["realized"]["base"], 100.0);
+    assert_eq!(hkd["realized"]["local"], 800.0);
+    assert_eq!(hkd["realized"]["base"], 0.0); // no HKD->USD rate seeded
+}
+
+/// POST /realized-pnl/query resolves a full `AccountScope` server-side, so the
+/// web client can honor portfolio / multi-account / all scopes the selector
+/// exposes — not just single-account.
+#[tokio::test]
+async fn realized_pnl_query_route_resolves_account_scope() {
+    let t = setup_app_with_usd_account().await;
+    let body = format!(
+        r#"{{"accountId":"{id}","snapshots":[{{"date":"2026-06-04","positions":[],"cashBalances":{{}},"realized":[{{"underlying":"TSLA","currency":"USD","realizedLocal":-1200.0}}]}}]}}"#,
+        id = t.account_id
+    );
+    let r = t.app.clone().oneshot(post_import(body)).await.unwrap();
+    assert!(r.status().is_success(), "import failed: {:?}", r.status());
+
+    // Account scope returns the same data the GET fast-path does.
+    let query = format!(
+        r#"{{"filter":{{"type":"account","accountId":"{id}"}}}}"#,
+        id = t.account_id
+    );
+    let r = t.app.clone().oneshot(post_realized_query(query)).await.unwrap();
+    let status = r.status();
+    let body = to_bytes(r.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "query route failed: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let resp: Value = serde_json::from_slice(&body).unwrap();
+    let entries = resp["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["underlying"], "TSLA");
+    assert_eq!(entries[0]["realized"]["base"], -1200.0);
+    assert_eq!(resp["total"]["base"], -1200.0);
+
+    // The "all" scope also resolves (exercises resolve_scope's all-accounts path).
+    let r = t
+        .app
+        .clone()
+        .oneshot(post_realized_query(r#"{"filter":{"type":"all"}}"#.to_string()))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), axum::http::StatusCode::OK);
+}

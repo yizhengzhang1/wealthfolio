@@ -203,10 +203,13 @@ pub struct HoldingsSnapshotInput {
     pub positions: Vec<HoldingsPositionInput>,
     /// Cash balances by currency (e.g., {"USD": "10000", "EUR": "5000"})
     pub cash_balances: HashMap<String, String>,
-    /// Per-underlying realized P&L from the broker ledger (ibkr-sync). Old
-    /// payloads without this field deserialize to an empty Vec.
+    /// Per-underlying realized P&L from the broker ledger (ibkr-sync). `None`
+    /// when the field is absent (legacy / plain CSV clients) — distinct from
+    /// `Some([])`, which a sync sends to explicitly clear stored entries. Only
+    /// `Some` overwrites the stored blob, so a plain holdings import never wipes
+    /// a previously-synced ledger.
     #[serde(default)]
-    pub realized: Vec<RealizedEntryInput>,
+    pub realized: Option<Vec<RealizedEntryInput>>,
 }
 
 /// Result of importing holdings CSV
@@ -330,15 +333,30 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_input_defaults_realized_to_empty() {
-        // Old ibkr-sync payload without the realized field.
+    fn snapshot_input_defaults_realized_to_none() {
+        // Old ibkr-sync / plain CSV payload without the realized field: absent
+        // → None (distinct from Some([]), which would clear the stored blob).
         let json = r#"{
             "date": "2026-06-04",
             "positions": [],
             "cashBalances": {}
         }"#;
         let input: HoldingsSnapshotInput = serde_json::from_str(json).unwrap();
-        assert!(input.realized.is_empty());
+        assert!(input.realized.is_none());
+    }
+
+    #[test]
+    fn snapshot_input_parses_explicit_empty_realized() {
+        // A sync sends `realized: []` to explicitly clear its stored ledger.
+        let json = r#"{
+            "date": "2026-06-04",
+            "positions": [],
+            "cashBalances": {},
+            "realized": []
+        }"#;
+        let input: HoldingsSnapshotInput = serde_json::from_str(json).unwrap();
+        let realized = input.realized.expect("realized field present");
+        assert!(realized.is_empty());
     }
 
     #[test]
@@ -366,8 +384,9 @@ mod tests {
             ]
         }"#;
         let input: HoldingsSnapshotInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.realized.len(), 2);
-        assert_eq!(input.realized[0].underlying, "AAPL");
-        assert_eq!(input.realized[1].currency, "HKD");
+        let realized = input.realized.expect("realized list present");
+        assert_eq!(realized.len(), 2);
+        assert_eq!(realized[0].underlying, "AAPL");
+        assert_eq!(realized[1].currency, "HKD");
     }
 }

@@ -821,23 +821,94 @@ async fn import_single_snapshot_impl(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to save snapshot: {}", e))?;
 
-    // Persist the per-underlying realized P&L blob in app_settings KV.
-    // Empty list still writes "[]" so a re-import clears stale entries.
-    let realized_key = format!("realized_pnl:{}", account_id);
-    let realized_json = serde_json::to_string(&snapshot_input.realized)
-        .map_err(|e| anyhow::anyhow!("Failed to serialize realized P&L: {}", e))?;
-    state
-        .settings_service
-        .set_setting_value(&realized_key, &realized_json)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to store realized P&L: {}", e))?;
+    // Persist the per-underlying realized P&L blob in app_settings KV — but only
+    // when the payload actually carries the field. `Some([])` (a sync clearing
+    // its ledger) writes "[]"; `None` (a legacy / plain CSV import that knows
+    // nothing about realized P&L) leaves any previously-synced blob untouched.
+    if let Some(realized) = &snapshot_input.realized {
+        let realized_key = format!("realized_pnl:{}", account_id);
+        let realized_json = serde_json::to_string(realized)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize realized P&L: {}", e))?;
+        state
+            .settings_service
+            .set_setting_value(&realized_key, &realized_json)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to store realized P&L: {}", e))?;
+    }
 
     Ok(())
 }
 
-/// GET /realized-pnl?accountId=... — per-underlying realized P&L,
-/// FX-converted to base, sorted by |base| desc, with a base total.
-/// accountId omitted → all holdings-purpose accounts.
+/// Read each account's realized blob, FX-convert local→base (degrading to base 0
+/// on a missing rate rather than 500-ing), and merge per `(underlying, currency)`
+/// so mixed-currency underlyings stay distinct — matching the sync's
+/// per-underlying-per-currency rows and the frontend's `underlying:currency` row
+/// key. Sorted by |base| desc, with a base total.
+async fn aggregate_realized_pnl(
+    state: &Arc<AppState>,
+    account_ids: &[String],
+    base: &str,
+) -> Result<RealizedPnlResponse, anyhow::Error> {
+    use std::collections::HashMap;
+    // (underlying, currency) -> (local_sum, base_sum)
+    let mut acc: HashMap<(String, String), (Decimal, Decimal)> = HashMap::new();
+
+    for account_id in account_ids {
+        let key = format!("realized_pnl:{}", account_id);
+        let Some(blob) = state.settings_service.get_setting_value(&key)? else {
+            continue;
+        };
+        let entries: Vec<RealizedEntryInput> = serde_json::from_str(&blob)
+            .map_err(|e| anyhow::anyhow!("Corrupt realized_pnl blob for {}: {}", account_id, e))?;
+        for entry in entries {
+            let base_amount = state
+                .fx_service
+                .convert_currency(entry.realized_local, &entry.currency, base)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        "[realized-pnl] no FX rate {}->{} for {}; base set to 0: {}",
+                        entry.currency,
+                        base,
+                        entry.underlying,
+                        e
+                    );
+                    Decimal::ZERO
+                });
+            let slot = acc
+                .entry((entry.underlying.clone(), entry.currency.clone()))
+                .or_insert((Decimal::ZERO, Decimal::ZERO));
+            slot.0 += entry.realized_local;
+            slot.1 += base_amount;
+        }
+    }
+
+    let mut entries: Vec<RealizedPnlEntry> = acc
+        .into_iter()
+        .map(|((underlying, currency), (local, base_sum))| RealizedPnlEntry {
+            underlying,
+            currency,
+            realized: RealizedAmounts {
+                local,
+                base: base_sum,
+            },
+        })
+        .collect();
+
+    entries.sort_by(|a, b| b.realized.base.abs().cmp(&a.realized.base.abs()));
+
+    let total_base: Decimal = entries.iter().map(|e| e.realized.base).sum();
+
+    Ok(RealizedPnlResponse {
+        base_currency: base.to_string(),
+        entries,
+        total: RealizedTotal { base: total_base },
+    })
+}
+
+/// GET /realized-pnl?accountId=... — single-account (or, when omitted, all
+/// holdings-purpose accounts) realized P&L. The web client uses this fast path
+/// for the single-account scope; portfolio / multi-account scopes go to the POST
+/// query route below so the full `AccountScope` resolves server-side.
 pub async fn get_realized_pnl_for_account(
     State(state): State<Arc<AppState>>,
     Query(q): Query<RealizedPnlQuery>,
@@ -858,64 +929,24 @@ pub async fn get_realized_pnl_for_account(
             .collect()
     };
 
-    use std::collections::HashMap;
-    let mut acc: HashMap<String, (String, Decimal, bool, Decimal)> = HashMap::new();
+    Ok(Json(
+        aggregate_realized_pnl(&state, &account_ids, &base).await?,
+    ))
+}
 
-    for account_id in &account_ids {
-        let key = format!("realized_pnl:{}", account_id);
-        let Some(blob) = state.settings_service.get_setting_value(&key)? else {
-            continue;
-        };
-        let entries: Vec<RealizedEntryInput> = serde_json::from_str(&blob)
-            .map_err(|e| anyhow::anyhow!("Corrupt realized_pnl blob for {}: {}", account_id, e))?;
-        for entry in entries {
-            let base_amount = state
-                .fx_service
-                .convert_currency(entry.realized_local, &entry.currency, &base)
-                .unwrap_or_else(|e| {
-                    tracing::warn!(
-                        "[realized-pnl] no FX rate {}->{}  for {}; base set to 0: {}",
-                        entry.currency,
-                        base,
-                        entry.underlying,
-                        e
-                    );
-                    Decimal::ZERO
-                });
-            let slot = acc.entry(entry.underlying.clone()).or_insert((
-                entry.currency.clone(),
-                Decimal::ZERO,
-                true,
-                Decimal::ZERO,
-            ));
-            if slot.2 && slot.0 == entry.currency {
-                slot.1 += entry.realized_local;
-            } else {
-                slot.2 = false;
-            }
-            slot.3 += base_amount;
-        }
-    }
+/// POST /realized-pnl/query — realized P&L for an arbitrary `AccountScope`
+/// (all / account / portfolio / accounts), resolved server-side. Mirrors
+/// `/income/summary/query`, so the web client can honor every scope the
+/// account selector exposes (not just single-account).
+pub async fn get_realized_pnl_for_scope(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<FilterBody>,
+) -> ApiResult<Json<RealizedPnlResponse>> {
+    let base = state.base_currency.read().unwrap().clone();
+    let resolved = resolve_scope(&body.filter, &state)?;
+    let account_ids = holdings_account_ids(&state, &resolved.account_ids)?;
 
-    let mut entries: Vec<RealizedPnlEntry> = acc
-        .into_iter()
-        .map(|(underlying, (currency, local, _consistent, base_sum))| RealizedPnlEntry {
-            underlying,
-            currency,
-            realized: RealizedAmounts {
-                local,
-                base: base_sum,
-            },
-        })
-        .collect();
-
-    entries.sort_by(|a, b| b.realized.base.abs().cmp(&a.realized.base.abs()));
-
-    let total_base: Decimal = entries.iter().map(|e| e.realized.base).sum();
-
-    Ok(Json(RealizedPnlResponse {
-        base_currency: base,
-        entries,
-        total: RealizedTotal { base: total_base },
-    }))
+    Ok(Json(
+        aggregate_realized_pnl(&state, &account_ids, &base).await?,
+    ))
 }
