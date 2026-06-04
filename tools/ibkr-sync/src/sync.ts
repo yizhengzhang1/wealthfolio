@@ -305,7 +305,10 @@ export async function run(): Promise<number> {
       date: today,
       positions: allPositions,
       cashBalances,
-      realized: realizedList.length > 0 ? realizedList : undefined,
+      // Always send the ledger (even when empty): the server mirrors it, so an
+      // explicit [] clears any stale server-side realized rows. Omitting the
+      // field would instead leave the previously-stored blob untouched.
+      realized: realizedList,
     });
 
     // Step 2: overwrite the synthetic avg-cost quote with IBKR's real

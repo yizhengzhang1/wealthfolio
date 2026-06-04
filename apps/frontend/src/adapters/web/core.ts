@@ -695,8 +695,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       if (p?.filter?.type === "account" && p.filter.accountId) {
         url = `${API_PREFIX}/realized-pnl?accountId=${encodeURIComponent(p.filter.accountId)}`;
         method = "GET";
+      } else if (p?.filter) {
+        // Portfolio / multi-account / all scopes resolve server-side.
+        body = JSON.stringify({ filter: p.filter });
       } else {
-        body = JSON.stringify({ filter: p?.filter ?? null });
+        // No filter → all holdings accounts. The server's FilterBody requires a
+        // non-null scope, so don't POST {filter:null}; use the GET all path.
+        url = `${API_PREFIX}/realized-pnl`;
+        method = "GET";
       }
       break;
     }
