@@ -17,6 +17,8 @@ function makeHolding(p: {
   mv?: number; // marketValue.base
   cost?: number; // costBasis.base
   gain?: number; // totalGain.base
+  unreal?: number; // unrealizedGain.base
+  real?: number; // realizedGain.base
   day?: number; // dayChange.base
   prevClose?: number; // prevCloseValue.base
   weight?: number;
@@ -32,6 +34,8 @@ function makeHolding(p: {
     marketValue: { local: p.mv ?? 0, base: p.mv ?? 0 },
     costBasis: { local: p.cost ?? 0, base: p.cost ?? 0 },
     totalGain: { local: p.gain ?? 0, base: p.gain ?? 0 },
+    unrealizedGain: { local: p.unreal ?? 0, base: p.unreal ?? 0 },
+    realizedGain: { local: p.real ?? 0, base: p.real ?? 0 },
     dayChange: { local: p.day ?? 0, base: p.day ?? 0 },
     prevCloseValue: { local: p.prevClose ?? 0, base: p.prevClose ?? 0 },
     weight: p.weight ?? 0,
@@ -63,9 +67,9 @@ describe("groupHoldingsByUnderlying", () => {
 
   it("groups a stock + its option legs into one group row with aggregates", () => {
     const rows = groupHoldingsByUnderlying([
-      makeHolding({ id: "s", symbol: "ASTS", name: "AST SpaceMobile", price: 113.41, mv: 113.41, cost: 123, gain: -9.59, day: 1, prevClose: 112.41, weight: 0.1 }),
-      makeHolding({ id: "c1", symbol: OCC_CALL, mv: -1264.56, cost: 313, gain: -300, day: 2, prevClose: -1266.56, weight: -0.3 }),
-      makeHolding({ id: "c2", symbol: OCC_CALL2, mv: 2028.15, cost: 578, gain: 1450, day: 3, prevClose: 2025.15, weight: 0.5 }),
+      makeHolding({ id: "s", symbol: "ASTS", name: "AST SpaceMobile", price: 113.41, mv: 113.41, cost: 123, gain: -9.59, unreal: -9.59, real: 0, day: 1, prevClose: 112.41, weight: 0.1 }),
+      makeHolding({ id: "c1", symbol: OCC_CALL, mv: -1264.56, cost: 313, gain: -300, unreal: -340, real: 40, day: 2, prevClose: -1266.56, weight: -0.3 }),
+      makeHolding({ id: "c2", symbol: OCC_CALL2, mv: 2028.15, cost: 578, gain: 1450, unreal: 1400, real: 50, day: 3, prevClose: 2025.15, weight: 0.5 }),
     ]);
 
     expect(rows).toHaveLength(1);
@@ -79,6 +83,8 @@ describe("groupHoldingsByUnderlying", () => {
     expect(group.marketValueBase).toBeCloseTo(113.41 - 1264.56 + 2028.15, 2);
     expect(group.costBasisBase).toBeCloseTo(123 + 313 + 578, 2);
     expect(group.totalGainBase).toBeCloseTo(-9.59 - 300 + 1450, 2);
+    expect(group.unrealizedGainBase).toBeCloseTo(-9.59 - 340 + 1400, 2);
+    expect(group.realizedGainBase).toBeCloseTo(0 + 40 + 50, 2);
     expect(group.dayChangeBase).toBeCloseTo(1 + 2 + 3, 2);
     expect(group.weight).toBeCloseTo(0.1 - 0.3 + 0.5, 4);
     expect(group.totalGainPct).toBeCloseTo(group.totalGainBase / Math.abs(group.costBasisBase), 6);
