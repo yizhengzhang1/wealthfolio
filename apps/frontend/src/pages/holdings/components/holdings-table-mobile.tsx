@@ -4,17 +4,17 @@ import { usePersistentState } from "@/hooks/use-persistent-state";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Account, AccountScope, Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { AmountDisplay, Badge, GainPercent, Input, Separator } from "@wealthfolio/ui";
+import { AmountDisplay, Badge, GainPercent, Input } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Card } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { groupHoldingsByUnderlying, isHoldingGroupRow, type HoldingRow } from "../utils/group-by-underlying";
+import { groupHoldingsByUnderlying, isHoldingGroupRow, type HoldingGroupRow, type HoldingRow } from "../utils/group-by-underlying";
 import { isStrategyGroupRow, type StrategyGroupRow } from "../utils/detect-strategies";
 import { useOptionStrategies } from "@/hooks/use-option-strategies";
 import { HoldingsMobileFilterSheet } from "./holdings-mobile-filter-sheet";
+import { HOLDING_METRIC_COLUMNS, type MetricColumn } from "../utils/holdings-metrics";
 
 interface HoldingsTableMobileProps {
   holdings: Holding[];
@@ -35,6 +35,43 @@ interface HoldingsTableMobileProps {
   typeOptions?: { value: string; label: string }[];
 }
 
+interface MetricValues { top: number | null; bottom?: number | null; pct?: number | null }
+
+function MetricStrip({
+  resolve,
+  currency,
+  isHidden,
+  showHeader,
+}: {
+  resolve: (m: MetricColumn) => MetricValues;
+  currency: string;
+  isHidden: boolean;
+  showHeader: boolean;
+}) {
+  return (
+    <div className="flex">
+      {HOLDING_METRIC_COLUMNS.map((m) => {
+        const v = resolve(m);
+        return (
+          <div key={m.id} className="flex min-w-[88px] flex-col items-end px-2 text-right">
+            {showHeader && <span className="text-muted-foreground text-[10px]">{m.label}</span>}
+            {v.top == null ? (
+              <span className="text-xs text-transparent">-</span>
+            ) : (
+              <AmountDisplay value={v.top} currency={currency} colorFormat={m.colorFormat} isHidden={isHidden} className="text-sm" />
+            )}
+            {m.showPct && v.pct != null ? (
+              <GainPercent className="text-[10px]" value={v.pct} />
+            ) : v.bottom != null ? (
+              <span className="text-muted-foreground text-[10px]">{v.bottom}</span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export const HoldingsTableMobile = ({
   holdings,
   isLoading,
@@ -49,8 +86,8 @@ export const HoldingsTableMobile = ({
   showFilterButton = true,
   sortBy: controlledSortBy,
   setSortBy: controlledSetSortBy,
-  showTotalReturn: controlledShowTotalReturn,
-  setShowTotalReturn: controlledSetShowTotalReturn,
+  showTotalReturn: _showTotalReturn,
+  setShowTotalReturn: _setShowTotalReturn,
   typeOptions,
 }: HoldingsTableMobileProps) => {
   const { isBalanceHidden } = useBalancePrivacy();
@@ -60,12 +97,9 @@ export const HoldingsTableMobile = ({
 
   // Internal state for uncontrolled mode
   const [internalSortBy, setInternalSortBy] = useState<"symbol" | "marketValue">("marketValue");
-  const [internalShowTotalReturn, setInternalShowTotalReturn] = useState(true);
 
   const sortBy = controlledSortBy ?? internalSortBy;
   const setSortBy = controlledSetSortBy ?? setInternalSortBy;
-  const showTotalReturn = controlledShowTotalReturn ?? internalShowTotalReturn;
-  const setShowTotalReturn = controlledSetShowTotalReturn ?? setInternalShowTotalReturn;
 
   const [groupByUnderlying, setGroupByUnderlying] = usePersistentState<boolean>(
     "holdings-mobile:group-by-underlying",
@@ -171,127 +205,99 @@ export const HoldingsTableMobile = ({
   }, [filteredHoldings, groupByUnderlying, sortBy, groupByStrategy, overrides]);
 
   const handleNavigate = (holding: Holding) => {
-    // Use instrument.id (asset ID) for navigation, not symbol (which may be stripped)
     const assetId = holding.instrument?.id;
     if (assetId && !assetId.startsWith("$CASH")) {
       navigate(`/holdings/${encodeURIComponent(assetId)}`, { state: { holding } });
     }
   };
 
-  const renderLeafCard = (holding: Holding) => {
+  const resolveLeaf = (h: Holding) => (m: MetricColumn): MetricValues => ({
+    top: m.leafTop(h),
+    bottom: m.leafBottom?.(h),
+    pct: m.leafPct?.(h),
+  });
+  const resolveGroup = (g: HoldingGroupRow) => (m: MetricColumn): MetricValues => ({
+    top: m.groupTop ? m.groupTop(g) : null,
+    pct: m.groupPct?.(g),
+  });
+  const resolveStrategy = (s: StrategyGroupRow) => (m: MetricColumn): MetricValues => ({
+    top: m.strategyTop ? m.strategyTop(s) : null,
+    pct: m.strategyPct?.(s),
+  });
+
+  const renderLeafRow = (holding: Holding) => {
     const symbol = holding.instrument?.symbol ?? holding.id;
     const isCash = symbol.startsWith("$CASH");
     const parsedOption = isCash ? null : parseOccSymbol(symbol);
     const avatarSymbol = isCash ? "$CASH" : parsedOption ? parsedOption.underlying : symbol;
-    const displaySymbol = isCash
-      ? symbol.split("-")[0]
-      : parsedOption
-        ? parsedOption.underlying
-        : symbol;
+    const displaySymbol = isCash ? symbol.split("-")[0] : parsedOption ? parsedOption.underlying : symbol;
     const subtitle = parsedOption
       ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
       : (holding.instrument?.name ?? null);
     const isNavigable = !isCash && holding.instrument?.symbol;
 
     return (
-      <Card
-        key={holding.id}
-        className={cn("p-3", isNavigable && "hover:bg-muted/50 cursor-pointer transition-colors")}
-        onClick={() => isNavigable && handleNavigate(holding)}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex flex-1 items-center gap-2 overflow-hidden">
-            {/* Chevron-width spacer so leaf cards align with expandable group/strategy cards */}
-            <span className="h-4 w-4 shrink-0" />
-            <TickerAvatar symbol={avatarSymbol} className="h-10 w-10" />
-            <div className="flex-1 overflow-hidden">
-              <div className="flex items-center gap-1.5">
-                <p className="truncate font-semibold">{displaySymbol}</p>
-              </div>
-              {subtitle && <p className="text-muted-foreground truncate text-sm">{subtitle}</p>}
-            </div>
+      <div key={holding.id} className="flex items-stretch border-b">
+        <button
+          type="button"
+          className={cn(
+            "bg-background sticky left-0 z-10 flex min-w-[140px] items-center gap-2 p-2 text-left",
+            isNavigable && "hover:bg-muted/50",
+          )}
+          onClick={() => isNavigable && handleNavigate(holding)}
+        >
+          <span className="h-4 w-4 shrink-0" />
+          <TickerAvatar symbol={avatarSymbol} className="h-8 w-8" />
+          <div className="overflow-hidden">
+            <p className="truncate text-sm font-semibold">{displaySymbol}</p>
+            {subtitle && <p className="text-muted-foreground truncate text-[11px]">{subtitle}</p>}
           </div>
-          <div className="ml-2 text-right">
-            <AmountDisplay
-              value={holding.marketValue?.local ?? 0}
-              currency={holding.localCurrency}
-              isHidden={isBalanceHidden}
-              className="font-medium"
-            />
-            <div className="flex items-center justify-end gap-1">
-              <AmountDisplay
-                value={
-                  showTotalReturn ? (holding.totalGain?.local ?? 0) : (holding.dayChange?.local ?? 0)
-                }
-                currency={holding.localCurrency}
-                isHidden={isBalanceHidden}
-                colorFormat
-                className="text-xs"
-              />
-              <Separator orientation="vertical" className="mx-1 h-4" />
-              <GainPercent
-                value={showTotalReturn ? (holding.totalGainPct ?? 0) : (holding.dayChangePct ?? 0)}
-                className="text-xs"
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
+        </button>
+        <MetricStrip
+          resolve={resolveLeaf(holding)}
+          currency={holding.localCurrency}
+          isHidden={isBalanceHidden}
+          showHeader={false}
+        />
+      </div>
     );
   };
 
-  const renderStrategyCard = (strategy: StrategyGroupRow) => {
+  const renderStrategyRow = (strategy: StrategyGroupRow) => {
     const expanded = expandedStrategies.includes(strategy.id);
     return (
-      <div key={strategy.id} className="space-y-2">
-        <Card
-          className="hover:bg-muted/50 cursor-pointer p-3 transition-colors"
-          onClick={() => toggleStrategy(strategy.id)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex flex-1 items-center gap-2 overflow-hidden">
-              <Icons.ChevronRight
-                className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")}
-              />
-              <div className="flex-1 overflow-hidden">
-                <div className="flex items-center gap-1.5">
-                  <p className="truncate font-semibold">{strategy.name}</p>
-                  <Badge variant="secondary">{strategy.memberCount}</Badge>
-                </div>
-                <p className="text-muted-foreground truncate text-sm">
-                  {strategy.netCashBase >= 0
-                    ? `Net debit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`
-                    : `Net credit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`}
-                </p>
+      <div key={strategy.id}>
+        <div className="flex items-stretch border-b">
+          <button
+            type="button"
+            className="bg-background hover:bg-muted/50 sticky left-0 z-10 flex min-w-[140px] items-center gap-2 p-2 text-left"
+            onClick={() => toggleStrategy(strategy.id)}
+          >
+            <Icons.ChevronRight
+              className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-90")}
+            />
+            <div className="overflow-hidden">
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-semibold">{strategy.name}</p>
+                <Badge variant="secondary">{strategy.memberCount}</Badge>
               </div>
+              <p className="text-muted-foreground truncate text-[11px]">
+                {strategy.netCashBase >= 0
+                  ? `Net debit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`
+                  : `Net credit ${strategy.baseCurrency} ${Math.abs(strategy.netCashBase).toFixed(2)}`}
+              </p>
             </div>
-            <div className="ml-2 text-right">
-              <AmountDisplay
-                value={strategy.marketValueBase}
-                currency={strategy.baseCurrency}
-                isHidden={isBalanceHidden}
-                className="font-medium"
-              />
-              <div className="flex items-center justify-end gap-1">
-                <AmountDisplay
-                  value={showTotalReturn ? strategy.totalGainBase : strategy.dayChangeBase}
-                  currency={strategy.baseCurrency}
-                  isHidden={isBalanceHidden}
-                  colorFormat
-                  className="text-xs"
-                />
-                <Separator orientation="vertical" className="mx-1 h-4" />
-                <GainPercent
-                  value={(showTotalReturn ? strategy.totalGainPct : strategy.dayChangePct) ?? 0}
-                  className="text-xs"
-                />
-              </div>
-            </div>
-          </div>
-        </Card>
+          </button>
+          <MetricStrip
+            resolve={resolveStrategy(strategy)}
+            currency={strategy.baseCurrency}
+            isHidden={isBalanceHidden}
+            showHeader={false}
+          />
+        </div>
         {expanded && (
-          <div className="ml-4 space-y-2 border-l pl-2">
-            {strategy.subRows.map((leg) => renderLeafCard(leg))}
+          <div className="border-l ml-4 pl-2">
+            {strategy.subRows.map((leg) => renderLeafRow(leg))}
           </div>
         )}
       </div>
@@ -336,68 +342,61 @@ export const HoldingsTableMobile = ({
           )}
         </div>
       )}
-      <div className="space-y-2">
+      <div className="overflow-x-auto">
+        {/* Header strip */}
+        <div className="flex border-b">
+          <div className="bg-background sticky left-0 z-10 min-w-[140px] p-2" />
+          <MetricStrip
+            resolve={() => ({ top: null })}
+            currency=""
+            isHidden={false}
+            showHeader
+          />
+        </div>
         {rows.length > 0 ? (
           rows.map((row) => {
             if (isHoldingGroupRow(row)) {
               const expanded = expandedKeys.includes(row.underlyingKey);
               return (
-                <div key={row.id} className="space-y-2">
-                  <Card
-                    className="hover:bg-muted/50 cursor-pointer p-3 transition-colors"
-                    onClick={() => toggleExpand(row.underlyingKey)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-1 items-center gap-2 overflow-hidden">
-                        <Icons.ChevronRight
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-transform",
-                            expanded && "rotate-90",
-                          )}
-                        />
-                        <TickerAvatar symbol={row.underlyingSymbol} className="h-10 w-10" />
-                        <div className="flex-1 overflow-hidden">
-                          <div className="flex items-center gap-1.5">
-                            <p className="truncate font-semibold">{row.underlyingSymbol}</p>
-                            <Badge variant="secondary">{row.memberCount}</Badge>
-                          </div>
-                          {row.underlyingName && (
-                            <p className="text-muted-foreground truncate text-sm">
-                              {row.underlyingName}
-                            </p>
-                          )}
+                <div key={row.id}>
+                  <div className="flex items-stretch border-b">
+                    <button
+                      type="button"
+                      className="bg-background hover:bg-muted/50 sticky left-0 z-10 flex min-w-[140px] items-center gap-2 p-2 text-left"
+                      onClick={() => toggleExpand(row.underlyingKey)}
+                    >
+                      <Icons.ChevronRight
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-transform",
+                          expanded && "rotate-90",
+                        )}
+                      />
+                      <TickerAvatar symbol={row.underlyingSymbol} className="h-8 w-8" />
+                      <div className="overflow-hidden">
+                        <div className="flex items-center gap-1.5">
+                          <p className="truncate text-sm font-semibold">{row.underlyingSymbol}</p>
+                          <Badge variant="secondary">{row.memberCount}</Badge>
                         </div>
+                        {row.underlyingName && (
+                          <p className="text-muted-foreground truncate text-[11px]">
+                            {row.underlyingName}
+                          </p>
+                        )}
                       </div>
-                      <div className="ml-2 text-right">
-                        <AmountDisplay
-                          value={row.marketValueBase}
-                          currency={row.baseCurrency}
-                          isHidden={isBalanceHidden}
-                          className="font-medium"
-                        />
-                        <div className="flex items-center justify-end gap-1">
-                          <AmountDisplay
-                            value={showTotalReturn ? row.totalGainBase : row.dayChangeBase}
-                            currency={row.baseCurrency}
-                            isHidden={isBalanceHidden}
-                            colorFormat
-                            className="text-xs"
-                          />
-                          <Separator orientation="vertical" className="mx-1 h-4" />
-                          <GainPercent
-                            value={(showTotalReturn ? row.totalGainPct : row.dayChangePct) ?? 0}
-                            className="text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
+                    </button>
+                    <MetricStrip
+                      resolve={resolveGroup(row)}
+                      currency={row.baseCurrency}
+                      isHidden={isBalanceHidden}
+                      showHeader={false}
+                    />
+                  </div>
                   {expanded && (
-                    <div className="ml-4 space-y-2 border-l pl-2">
+                    <div className="ml-4 border-l pl-2">
                       {row.subRows.map((sub) =>
                         isStrategyGroupRow(sub)
-                          ? renderStrategyCard(sub)
-                          : renderLeafCard(sub),
+                          ? renderStrategyRow(sub)
+                          : renderLeafRow(sub),
                       )}
                     </div>
                   )}
@@ -405,7 +404,7 @@ export const HoldingsTableMobile = ({
               );
             }
             if (isStrategyGroupRow(row)) return null;
-            return renderLeafCard(row);
+            return renderLeafRow(row);
           })
         ) : (
           <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
@@ -432,8 +431,6 @@ export const HoldingsTableMobile = ({
         showAccountScope={showAccountScope}
         sortBy={sortBy}
         setSortBy={setSortBy}
-        showTotalReturn={showTotalReturn}
-        setShowTotalReturn={setShowTotalReturn}
         groupByUnderlying={groupByUnderlying}
         setGroupByUnderlying={setGroupByUnderlying}
         groupByStrategy={groupByStrategy}

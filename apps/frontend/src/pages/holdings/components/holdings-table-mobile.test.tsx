@@ -96,6 +96,17 @@ const VERT_SHORT = (() => {
   return { ...h, quantity: -1 } as Holding;
 })();
 
+describe("HoldingsTableMobile Futu metric strip", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("renders the default metric headers in the scrollable strip", () => {
+    renderMobile([IBKR]);
+    expect(screen.getByText("MktVal / Qty")).toBeInTheDocument();
+    expect(screen.getByText("Price / AvgCost")).toBeInTheDocument();
+    expect(screen.getByText("Day")).toBeInTheDocument();
+  });
+});
+
 describe("HoldingsTableMobile strategy sub-grouping", () => {
   beforeEach(() => window.localStorage.clear());
 
@@ -123,7 +134,7 @@ describe("HoldingsTableMobile grouping", () => {
     renderMobile([ASTS_C, ASTS_P, IBKR]);
     // Parent card present with member count; legs hidden (collapsed by default)
     expect(screen.getByText(labelMatcher("ASTS"))).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
     expect(screen.queryByText(/CALL/)).not.toBeInTheDocument();
     expect(screen.queryByText(/PUT/)).not.toBeInTheDocument();
     // Single holding flat

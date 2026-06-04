@@ -664,8 +664,6 @@ export const HoldingsPage = () => {
         setSelectedTypes={setSelectedTypes}
         sortBy={sortBy}
         setSortBy={setSortBy}
-        showTotalReturn={showTotalReturn}
-        setShowTotalReturn={setShowTotalReturn}
         typeOptions={availableTypeOptions}
       />
 

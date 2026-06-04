@@ -25,8 +25,6 @@ interface HoldingsMobileFilterSheetProps {
   showAccountScope?: boolean;
   sortBy: "symbol" | "marketValue";
   setSortBy: (value: "symbol" | "marketValue") => void;
-  showTotalReturn: boolean;
-  setShowTotalReturn: (value: boolean) => void;
   groupByUnderlying?: boolean;
   setGroupByUnderlying?: (value: boolean) => void;
   groupByStrategy?: boolean;
@@ -48,8 +46,6 @@ export const HoldingsMobileFilterSheet = ({
   showAccountScope = true,
   sortBy,
   setSortBy,
-  showTotalReturn,
-  setShowTotalReturn,
   groupByUnderlying = true,
   setGroupByUnderlying,
   groupByStrategy = true,
@@ -123,21 +119,6 @@ export const HoldingsMobileFilterSheet = ({
                 />
               </div>
 
-              <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-                  Return View
-                </h4>
-                <AnimatedToggleGroup
-                  value={showTotalReturn ? "total" : "daily"}
-                  onValueChange={(value) => setShowTotalReturn(value === "total")}
-                  items={[
-                    { value: "total", label: "Total Return" },
-                    { value: "daily", label: "Daily Return" },
-                  ]}
-                  size="sm"
-                  className="inline-flex w-auto"
-                />
-              </div>
             </div>
 
             <Separator />
