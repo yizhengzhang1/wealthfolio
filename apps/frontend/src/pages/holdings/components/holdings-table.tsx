@@ -9,7 +9,6 @@ import {
 } from "@wealthfolio/ui/components/ui/dropdown-menu";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { parseOccSymbol } from "@/lib/occ-symbol";
-import { safeDivide } from "@/lib/utils";
 import type { ColumnDef } from "@tanstack/react-table";
 import { GainPercent, Badge } from "@wealthfolio/ui";
 
@@ -20,7 +19,7 @@ import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
-import { AmountDisplay, QuantityDisplay } from "@wealthfolio/ui";
+import { AmountDisplay } from "@wealthfolio/ui";
 import { useNavigate } from "react-router-dom";
 
 import { AnimatedToggleGroup } from "@wealthfolio/ui";
@@ -45,6 +44,10 @@ import {
   type StrategyGroupRow,
 } from "../utils/detect-strategies";
 import {
+  HOLDING_METRIC_COLUMNS,
+  type MetricColumn,
+} from "../utils/holdings-metrics";
+import {
   useOptionStrategies,
   useCreateOptionStrategy,
   useUpdateOptionStrategy,
@@ -52,35 +55,10 @@ import {
 } from "@/hooks/use-option-strategies";
 import { useState } from "react";
 
-// Helper function to get display value and currency based on toggle state
-const getDisplayValueAndCurrency = (
-  holding: Holding,
-  valueInBase: number | null | undefined,
-  showConvertedToBase: boolean,
-): { value: number; currency: string } => {
-  const fxRate = holding.fxRate ?? 1; // Use fxRate from Holding
-
-  if (showConvertedToBase) {
-    // Show value in Base Currency
-    return {
-      value: valueInBase ?? 0,
-      currency: holding.baseCurrency, // Use baseCurrency from Holding
-    };
-  } else {
-    // Show value in Asset's Original Currency
-    const valueInOriginal = safeDivide(valueInBase ?? 0, fxRate);
-    return {
-      value: valueInOriginal,
-      currency: holding.localCurrency, // Use localCurrency from Holding
-    };
-  }
-};
 
 export const HoldingsTable = ({
   holdings,
   isLoading,
-  showTotalReturn = true,
-  setShowTotalReturn,
   onClassify,
 }: {
   holdings: Holding[];
@@ -237,8 +215,6 @@ export const HoldingsTable = ({
         columns={getColumns(
           navigate,
           isBalanceHidden,
-          showConvertedValues,
-          showTotalReturn,
           onClassify,
           openRename,
           ungroupStrategy,
@@ -263,10 +239,14 @@ export const HoldingsTable = ({
           currency: false,
           symbolName: false,
           holdingType: false,
-          bookValue: false,
+          unrealized: false,
+          realized: false,
+          holding: false,
+          weight: false,
         }}
         defaultSorting={[{ id: "symbol", desc: false }]}
         scrollable={true}
+        pinFirstColumn={true}
         toolbarActions={
           <div className="mr-2 flex items-center gap-2">
             <AnimatedToggleGroup
@@ -322,18 +302,6 @@ export const HoldingsTable = ({
                 Create strategy ({Object.keys(selectedLegs).length})
               </Button>
             )}
-            {setShowTotalReturn && (
-              <AnimatedToggleGroup
-                value={showTotalReturn ? "total" : "daily"}
-                onValueChange={(value) => setShowTotalReturn(value === "total")}
-                items={[
-                  { value: "total", label: "Total" },
-                  { value: "daily", label: "Daily" },
-                ]}
-                size="xs"
-                rounded="md"
-              />
-            )}
             {hasMultipleCurrencies && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -382,11 +350,97 @@ export const HoldingsTable = ({
 
 export default HoldingsTable;
 
+function MetricCell({
+  topValue,
+  bottomValue,
+  pct,
+  currency,
+  showPct,
+  isHidden,
+}: {
+  topValue: number | null;
+  bottomValue?: number | null;
+  pct?: number | null;
+  currency: string;
+  showPct: boolean;
+  isHidden: boolean;
+}) {
+  if (topValue == null) return <div className="min-h-[40px] px-4" />;
+  return (
+    <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
+      <AmountDisplay value={topValue} currency={currency} colorFormat isHidden={isHidden} />
+      {showPct && pct != null ? (
+        <GainPercent className="text-xs" value={pct} />
+      ) : bottomValue != null ? (
+        <span className="text-muted-foreground text-xs">{bottomValue}</span>
+      ) : (
+        <div className="text-xs text-transparent">-</div>
+      )}
+    </div>
+  );
+}
+
+function buildMetricColumn(
+  metric: MetricColumn,
+  isHidden: boolean,
+): ColumnDef<HoldingRow> {
+  return {
+    id: metric.id,
+    enableHiding: true,
+    enableSorting: true,
+    accessorFn: (row) =>
+      isHoldingGroupRow(row)
+        ? metric.groupTop?.(row) ?? 0
+        : isStrategyGroupRow(row)
+          ? metric.strategyTop?.(row) ?? 0
+          : metric.leafTop(row),
+    header: ({ column }) => (
+      <DataTableColumnHeader className="justify-end text-right" column={column} title={metric.label} />
+    ),
+    meta: { label: metric.label },
+    cell: ({ row }) => {
+      const data = row.original;
+      const currency =
+        isHoldingGroupRow(data) || isStrategyGroupRow(data) ? data.baseCurrency : data.localCurrency;
+      if (isHoldingGroupRow(data)) {
+        return (
+          <MetricCell
+            topValue={metric.groupTop ? metric.groupTop(data) : null}
+            pct={metric.groupPct?.(data)}
+            currency={currency}
+            showPct={metric.showPct}
+            isHidden={isHidden}
+          />
+        );
+      }
+      if (isStrategyGroupRow(data)) {
+        return (
+          <MetricCell
+            topValue={metric.strategyTop ? metric.strategyTop(data) : null}
+            pct={metric.strategyPct?.(data)}
+            currency={currency}
+            showPct={metric.showPct}
+            isHidden={isHidden}
+          />
+        );
+      }
+      return (
+        <MetricCell
+          topValue={metric.leafTop(data)}
+          bottomValue={metric.leafBottom?.(data)}
+          pct={metric.leafPct?.(data)}
+          currency={currency}
+          showPct={metric.showPct}
+          isHidden={isHidden}
+        />
+      );
+    },
+  };
+}
+
 const getColumns = (
   navigate: ReturnType<typeof useNavigate>,
   isHidden: boolean,
-  showConvertedValues: boolean,
-  showTotalReturn: boolean,
   onClassify?: (holding: Holding) => void,
   onRenameStrategy?: (s: StrategyGroupRow) => void,
   onUngroupStrategy?: (s: StrategyGroupRow) => void,
@@ -564,223 +618,7 @@ const getColumns = (
     },
     enableHiding: false,
   },
-  {
-    id: "quantity",
-    accessorFn: (row) => (isHoldingGroupRow(row) || isStrategyGroupRow(row) ? 0 : row.quantity),
-    enableHiding: true,
-    header: ({ column }) => (
-      <DataTableColumnHeader className="justify-end text-right" column={column} title="Qty" />
-    ),
-    meta: {
-      label: "Quantity",
-    },
-    cell: ({ row }) => {
-      const data = row.original;
-      if (isHoldingGroupRow(data) || isStrategyGroupRow(data)) {
-        return <div className="min-h-[40px] px-4" />;
-      }
-      const symbol = data.instrument?.symbol ?? data.id;
-      const isOption = !!parseOccSymbol(symbol);
-      const assetTypeKey = data.instrument?.classifications?.assetType?.key ?? "";
-      const isBond =
-        assetTypeKey.startsWith("BOND_") ||
-        assetTypeKey === "DEBT_SECURITY" ||
-        assetTypeKey === "MONEY_MARKET_DEBT";
-      return (
-        <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <QuantityDisplay value={data.quantity} isHidden={isHidden} />
-          <span className="text-muted-foreground text-xs">
-            {isOption ? "contracts" : isBond ? "bonds" : "shares"}
-          </span>
-        </div>
-      );
-    },
-  },
-  {
-    id: "marketPrice",
-    accessorFn: (row) =>
-      isHoldingGroupRow(row)
-        ? row.underlyingPrice ?? 0
-        : isStrategyGroupRow(row)
-          ? 0
-          : row.price ?? 0,
-    enableHiding: true,
-    enableSorting: true,
-    header: ({ column }) => (
-      <DataTableColumnHeader
-        className="justify-end text-right"
-        column={column}
-        title="Today's Price"
-      />
-    ),
-    meta: {
-      label: "Today's Price",
-    },
-    cell: ({ row }) => {
-      const data = row.original;
-      if (isStrategyGroupRow(data)) {
-        return <div className="min-h-[40px] px-4" />;
-      }
-      if (isHoldingGroupRow(data)) {
-        if (data.underlyingPrice == null) {
-          return <div className="min-h-[40px] px-4" />;
-        }
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={data.underlyingPrice} currency={data.baseCurrency} />
-            <GainPercent className="text-xs" value={data.dayChangePct || 0} />
-          </div>
-        );
-      }
-      const price = data.price ?? 0;
-      const currency = data.localCurrency;
-      return (
-        <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <AmountDisplay value={price} currency={currency} />
-          <GainPercent className="text-xs" value={data.dayChangePct || 0} />
-        </div>
-      );
-    },
-  },
-  {
-    id: "bookValue",
-    accessorFn: (row) =>
-      isHoldingGroupRow(row)
-        ? row.costBasisBase
-        : isStrategyGroupRow(row)
-          ? row.costBasisBase
-          : row.costBasis?.local ?? 0,
-    enableHiding: true,
-    header: ({ column }) => (
-      <DataTableColumnHeader className="justify-end" column={column} title="Book Cost" />
-    ),
-    meta: {
-      label: "Book Cost",
-    },
-    cell: ({ row }) => {
-      const data = row.original;
-      if (isStrategyGroupRow(data)) {
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={data.costBasisBase} currency={data.baseCurrency} isHidden={isHidden} />
-            <div className="text-xs text-transparent">-</div>
-          </div>
-        );
-      }
-      if (isHoldingGroupRow(data)) {
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={data.costBasisBase} currency={data.baseCurrency} isHidden={isHidden} />
-            <div className="text-xs text-transparent">-</div>
-          </div>
-        );
-      }
-      const value = data.costBasis?.local ?? 0;
-      const currency = data.localCurrency;
-      return (
-        <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <AmountDisplay value={value} currency={currency} isHidden={isHidden} />
-          <div className="text-xs text-transparent">-</div>
-        </div>
-      );
-    },
-  },
-  {
-    id: "marketValue",
-    accessorFn: (row) =>
-      isHoldingGroupRow(row)
-        ? row.marketValueBase
-        : isStrategyGroupRow(row)
-          ? row.marketValueBase
-          : row.marketValue.base ?? 0,
-    enableHiding: false,
-    header: ({ column }) => (
-      <DataTableColumnHeader className="justify-end" column={column} title="Total Value" />
-    ),
-    meta: {
-      label: "Total Value",
-    },
-    cell: ({ row }) => {
-      const data = row.original;
-      if (isStrategyGroupRow(data)) {
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={data.marketValueBase} currency={data.baseCurrency} isHidden={isHidden} />
-            <div className="text-muted-foreground text-xs">{data.baseCurrency}</div>
-          </div>
-        );
-      }
-      if (isHoldingGroupRow(data)) {
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={data.marketValueBase} currency={data.baseCurrency} isHidden={isHidden} />
-            <div className="text-muted-foreground text-xs">{data.baseCurrency}</div>
-          </div>
-        );
-      }
-      const { value, currency } = getDisplayValueAndCurrency(
-        data,
-        data.marketValue.base,
-        showConvertedValues,
-      );
-      return (
-        <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <AmountDisplay value={value} currency={currency} isHidden={isHidden} />
-          <div className="text-muted-foreground text-xs">{currency}</div>
-        </div>
-      );
-    },
-  },
-  {
-    id: "performance",
-    accessorFn: (row) =>
-      isHoldingGroupRow(row) || isStrategyGroupRow(row)
-        ? (showTotalReturn ? row.totalGainBase : row.dayChangeBase)
-        : (showTotalReturn ? row.totalGain?.base : row.dayChange?.base) ?? 0,
-    enableHiding: false,
-    header: ({ column }) => (
-      <DataTableColumnHeader
-        className="justify-end"
-        column={column}
-        title={showTotalReturn ? "Unrealized Gain" : "Day Change"}
-      />
-    ),
-    meta: {
-      label: "Unrealized Gain",
-    },
-    cell: ({ row }) => {
-      const data = row.original;
-      if (isStrategyGroupRow(data)) {
-        const value = showTotalReturn ? data.totalGainBase : data.dayChangeBase;
-        const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={value} currency={data.baseCurrency} colorFormat={true} isHidden={isHidden} />
-            <GainPercent className="text-xs" value={pct || 0} />
-          </div>
-        );
-      }
-      if (isHoldingGroupRow(data)) {
-        const value = showTotalReturn ? data.totalGainBase : data.dayChangeBase;
-        const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
-        return (
-          <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-            <AmountDisplay value={value} currency={data.baseCurrency} colorFormat={true} isHidden={isHidden} />
-            <GainPercent className="text-xs" value={pct || 0} />
-          </div>
-        );
-      }
-      const valueBase = showTotalReturn ? data.totalGain?.base : data.dayChange?.base;
-      const pct = showTotalReturn ? data.totalGainPct : data.dayChangePct;
-      const { value, currency } = getDisplayValueAndCurrency(data, valueBase, showConvertedValues);
-      return (
-        <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <AmountDisplay value={value} currency={currency} colorFormat={true} isHidden={isHidden} />
-          <GainPercent className="text-xs" value={pct || 0} />
-        </div>
-      );
-    },
-  },
+  ...HOLDING_METRIC_COLUMNS.map((m) => buildMetricColumn(m, isHidden)),
   {
     id: "holdingType",
     accessorFn: (row) =>

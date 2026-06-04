@@ -149,7 +149,7 @@ describe("HoldingsTable grouping", () => {
     // The parent group row is the only collapsible toggle button; it carries the
     // underlying name and the memberCount badge.
     expect(screen.getByRole("button", { name: /AST SpaceMobile/i })).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument(); // memberCount badge
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0); // memberCount badge
     expect(screen.getByText(/CALL/)).toBeInTheDocument();
     // TSLA is an ungrouped single holding; symbol shows in both avatar and label.
     expect(screen.getAllByText("TSLA").length).toBeGreaterThan(0);
@@ -373,5 +373,21 @@ describe("HoldingsTable create-strategy from selection", () => {
     await userEvent.click(screen.getByText("Flat"));
     expect(screen.queryByText(/Create strategy/i)).not.toBeInTheDocument();
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  });
+});
+
+describe("HoldingsTable Futu columns", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("renders the default-visible metric column headers", () => {
+    renderTable([TSLA]);
+    expect(screen.getAllByText("MktVal / Qty", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Price / AvgCost", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Day", { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  it("no longer renders the table Total/Daily toggle", () => {
+    renderTable([TSLA]);
+    expect(screen.queryByText("Daily")).not.toBeInTheDocument();
   });
 });
