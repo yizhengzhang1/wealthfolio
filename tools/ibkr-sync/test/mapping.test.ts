@@ -5,6 +5,7 @@ import {
   ibkrPositionToHoldingRow,
   ibkrTradeToActivity,
 } from '../src/mapping.js';
+import { ibkrPositionToObserved, parseOcc } from '../src/mapping.js';
 
 const ACCOUNT_ID = 'acct-uuid-123';
 const AS_OF = '2026-05-30T12:00:00Z';
@@ -168,5 +169,58 @@ describe('ibkrPositionToHoldingRow', () => {
   ])('returns null when $label', ({ overrides }) => {
     const pos = makePosition(overrides as Partial<IbkrPosition>);
     expect(ibkrPositionToHoldingRow(pos, ACCOUNT_ID, AS_OF)).toBeNull();
+  });
+});
+
+describe('ibkrPositionToObserved', () => {
+  it('maps a stock position', () => {
+    const o = ibkrPositionToObserved(makePosition({ contract_description: 'IBKR', position: 6.2, average_price: 69 }));
+    expect(o).toEqual({
+      contractId: 1,
+      contractDescription: 'IBKR',
+      occSymbol: null,
+      instrumentType: 'EQUITY',
+      expiration: null,
+      quantity: '6.2',
+      avgCost: '69',
+      currency: 'USD',
+    });
+  });
+
+  it('maps an option position and pulls expiration from the OCC symbol', () => {
+    const o = ibkrPositionToObserved(
+      makePosition({
+        contract_id: 877985483,
+        contract_description: 'SPX    JUN2026 7450 P [SPXW  260604P07450000 100]',
+        position: 1,
+        average_price: 1.8164,
+      }),
+    );
+    expect(o.instrumentType).toBe('OPTION');
+    expect(o.occSymbol).toBe('SPXW  260604P07450000');
+    expect(o.expiration).toBe('2026-06-04');
+    expect(o.quantity).toBe('1');
+  });
+
+  it('preserves quantity 0 for closed rows', () => {
+    const o = ibkrPositionToObserved(makePosition({ position: 0, average_price: 0 }));
+    expect(o.quantity).toBe('0');
+  });
+});
+
+describe('parseOcc', () => {
+  it('parses a raw 21-char OCC symbol', () => {
+    expect(parseOcc('SPXW  260604P07450000')).toEqual({
+      occSymbol: 'SPXW  260604P07450000',
+      underlying: 'SPXW',
+      expiration: '2026-06-04',
+      right: 'PUT',
+      strike: '7450',
+      multiplier: 100,
+    });
+  });
+
+  it('returns null for a malformed symbol', () => {
+    expect(parseOcc('NOTANOCC')).toBeNull();
   });
 });

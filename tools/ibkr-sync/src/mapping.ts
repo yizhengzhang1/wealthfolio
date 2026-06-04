@@ -9,6 +9,7 @@ import type {
   ActivityInput,
   HoldingsPositionInput,
 } from './wealthfolio.js';
+import type { ObservedPosition } from './state.js';
 
 // ---------------------------------------------------------------------------
 // Trades → Activities (legacy, kept for the test suite and ad-hoc use)
@@ -157,39 +158,34 @@ export interface ParsedOption {
 }
 
 /**
- * Parse an IBKR option position into a fully-typed spec. Returns `null` for
- * stock rows or malformed strings. Uses the bracketed OCC payload —
- * see `parseOccFromContractDescription`.
+ * Parse a raw 21-char OCC symbol (e.g. "SPXW  260604P07450000") into a spec.
+ * `multiplier` is the OCC standard 100 (the per-contract multiplier lives in
+ * the IBKR bracket payload, not the OCC string). Returns null if malformed.
  */
-export function parseOptionPosition(pos: IbkrPosition): ParsedOption | null {
-  const occ = parseOccFromContractDescription(pos.contract_description);
-  if (!occ) return null;
-
-  const s = occ.occSymbol; // 21 chars guaranteed by parseOccFromContractDescription
+export function parseOcc(occSymbol: string): ParsedOption | null {
+  const s = occSymbol;
+  if (s.length !== 21) return null;
   const underlying = s.slice(0, 6).trim();
+  if (!underlying) return null;
   const yymmdd = s.slice(6, 12);
-  const yy = yymmdd.slice(0, 2);
-  const mm = yymmdd.slice(2, 4);
-  const dd = yymmdd.slice(4, 6);
-  // OCC date is YY only — same century assumption as the rest of the industry.
-  const expiration = `20${yy}-${mm}-${dd}`;
+  if (!/^\d{6}$/.test(yymmdd)) return null;
+  const expiration = `20${yymmdd.slice(0, 2)}-${yymmdd.slice(2, 4)}-${yymmdd.slice(4, 6)}`;
   const rightChar = s[12];
   if (rightChar !== 'C' && rightChar !== 'P') return null;
   const right: 'CALL' | 'PUT' = rightChar === 'C' ? 'CALL' : 'PUT';
   const strikeRaw = s.slice(13);
   if (!/^\d{8}$/.test(strikeRaw)) return null;
-  const strikeNum = Number(strikeRaw) / 1000;
-  // Drop trailing zeros for cleaner display (`"140"` not `"140.000"`).
-  const strike = String(strikeNum);
+  const strike = String(Number(strikeRaw) / 1000);
+  return { occSymbol: s, underlying, expiration, right, strike, multiplier: 100 };
+}
 
-  return {
-    occSymbol: s,
-    underlying,
-    expiration,
-    right,
-    strike,
-    multiplier: occ.multiplier,
-  };
+export function parseOptionPosition(pos: IbkrPosition): ParsedOption | null {
+  const occ = parseOccFromContractDescription(pos.contract_description);
+  if (!occ) return null;
+  const parsed = parseOcc(occ.occSymbol);
+  if (!parsed) return null;
+  // multiplier comes from the IBKR bracket payload, not the OCC string.
+  return { ...parsed, multiplier: occ.multiplier };
 }
 
 /**
@@ -242,5 +238,35 @@ export function ibkrPositionToHoldingsPosition(
     avgCost: String(pos.average_price),
     currency: pos.currency,
     instrumentType: 'OPTION',
+  };
+}
+
+/**
+ * Map one IBKR position row to an ObservedPosition for the sync state machine.
+ * Quantity is preserved verbatim (including "0" for closed rows).
+ */
+export function ibkrPositionToObserved(pos: IbkrPosition): ObservedPosition {
+  const parsed = parseOptionPosition(pos);
+  if (parsed) {
+    return {
+      contractId: pos.contract_id,
+      contractDescription: pos.contract_description,
+      occSymbol: parsed.occSymbol,
+      instrumentType: 'OPTION',
+      expiration: parsed.expiration,
+      quantity: String(pos.position),
+      avgCost: String(pos.average_price),
+      currency: pos.currency,
+    };
+  }
+  return {
+    contractId: pos.contract_id,
+    contractDescription: pos.contract_description.trim(),
+    occSymbol: null,
+    instrumentType: 'EQUITY',
+    expiration: null,
+    quantity: String(pos.position),
+    avgCost: String(pos.average_price),
+    currency: pos.currency,
   };
 }
