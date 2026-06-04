@@ -872,7 +872,16 @@ pub async fn get_realized_pnl_for_account(
             let base_amount = state
                 .fx_service
                 .convert_currency(entry.realized_local, &entry.currency, &base)
-                .map_err(|e| anyhow::anyhow!("FX convert failed: {}", e))?;
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        "[realized-pnl] no FX rate {}->{}  for {}; base set to 0: {}",
+                        entry.currency,
+                        base,
+                        entry.underlying,
+                        e
+                    );
+                    Decimal::ZERO
+                });
             let slot = acc.entry(entry.underlying.clone()).or_insert((
                 entry.currency.clone(),
                 Decimal::ZERO,
