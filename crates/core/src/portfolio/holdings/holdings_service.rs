@@ -92,6 +92,21 @@ fn is_expired_option(
     matches!(expiration, Some(exp) if exp < today)
 }
 
+/// Display cutoff for the expired-option *skip* filter: options expiring on or
+/// after this date are still shown. `grace_days` (default 1, from
+/// `WF_EXPIRED_OPTION_GRACE_DAYS`) lets a just-expired option linger ~1 day in
+/// holdings before disappearing. Valuation still zeroes it independently.
+fn expired_skip_cutoff(today: NaiveDate, grace_days: i64) -> NaiveDate {
+    today - chrono::Duration::days(grace_days.max(0))
+}
+
+fn expired_option_grace_days() -> i64 {
+    std::env::var("WF_EXPIRED_OPTION_GRACE_DAYS")
+        .ok()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(1)
+}
+
 fn is_expired_option_asset(asset: &Asset, today: NaiveDate) -> bool {
     is_expired_option(
         asset.instrument_type.as_ref() == Some(&InstrumentType::Option),
@@ -150,6 +165,7 @@ impl HoldingsService {
         skip_expired_options: bool,
     ) -> Vec<Holding> {
         let today = self.today_in_user_timezone();
+        let expired_cutoff = expired_skip_cutoff(today, expired_option_grace_days());
         let snapshot_positions: Vec<snapshot::Position> = latest_snapshot
             .positions
             .values()
@@ -228,7 +244,7 @@ impl HoldingsService {
                         asset_info.instrument_symbol.as_deref().unwrap_or_default(),
                         &asset_info.instrument.symbol,
                     ],
-                    today,
+                    expired_cutoff,
                 )
             {
                 debug!(
@@ -475,6 +491,7 @@ fn apply_portfolio_weights(account_id: &str, holdings: &mut [Holding]) {
 
 #[cfg(test)]
 mod expired_option_metadata_tests {
+    use super::expired_skip_cutoff;
     use super::is_expired_option;
     use chrono::NaiveDate;
     use serde_json::json;
@@ -575,6 +592,20 @@ mod expired_option_metadata_tests {
             today
         ));
         assert!(!is_expired_option(true, None, &["AAPL"], today));
+    }
+
+    #[test]
+    fn expired_skip_cutoff_applies_grace_days() {
+        let today = NaiveDate::from_ymd_opt(2026, 6, 4).unwrap();
+        // grace 1 → cutoff is yesterday; an option expiring 2026-06-03 is NOT
+        // beyond the cutoff (still displayed), one expiring 2026-06-02 is.
+        let cutoff = expired_skip_cutoff(today, 1);
+        assert_eq!(cutoff, NaiveDate::from_ymd_opt(2026, 6, 3).unwrap());
+        assert!(!is_expired_option(true, None, &["SPXW  260603P07500000"], cutoff));
+        assert!(is_expired_option(true, None, &["SPXW  260602P07500000"], cutoff));
+        // grace 0 → original behavior: yesterday's expiry is hidden.
+        let strict = expired_skip_cutoff(today, 0);
+        assert!(is_expired_option(true, None, &["SPXW  260603P07500000"], strict));
     }
 }
 
