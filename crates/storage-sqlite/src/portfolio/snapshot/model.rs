@@ -178,7 +178,11 @@ pub struct NewSnapshotPositionRecord {
 impl SnapshotPositionRecord {
     /// Convert a DB row into the in-memory Position struct. Lots are not
     /// reconstructed here — callers that need lot detail should query the
-    /// `lots` table directly.
+    /// `lots` table directly. `realized_gain` is likewise not stored on this
+    /// relational `snapshot_positions` table (no column); it lives only on the
+    /// JSON-blob snapshot path that the holdings display uses. If a future
+    /// reader sources holdings from this table, add a `realized_gain` column and
+    /// carry it through here / `from_position` to avoid silently zeroing it.
     pub fn to_position(&self, account_id: &str) -> Position {
         let parse_dt = |s: &str| -> chrono::DateTime<Utc> {
             chrono::DateTime::parse_from_rfc3339(s)
