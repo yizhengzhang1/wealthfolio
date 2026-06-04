@@ -115,6 +115,9 @@ export interface HoldingsPositionInput {
   providerId?: string;
   providerSymbol?: string;
   assetId?: string;
+  /** Cumulative realized P&L in the asset's currency. Camelcase JSON →
+   *  backend `realized_gain` (#[serde(default)] = 0). */
+  realizedGain?: number;
 }
 
 export interface HoldingsSnapshotInput {

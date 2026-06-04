@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyTradesToLedger, emptyLedger } from '../src/state.js';
+import { applyTradesToLedger, emptyLedger, loadState, saveState, emptyState } from '../src/state.js';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { IbkrTrade } from '../src/ibkr.js';
 import { tradeAssetKey, positionAssetKey } from '../src/mapping.js';
 import tradesFixture from '../fixtures/ibkr-trades.json' with { type: 'json' };
@@ -95,5 +98,32 @@ describe('applyTradesToLedger against the trades fixture', () => {
     const ledger = applyTradesToLedger(emptyLedger(), trades);
     expect(ledger.cumulativeRealizedByAsset['ACME']).toBe(500);     // STK close
     expect(ledger.cumulativeRealizedByAsset['OPT:ACME']).toBe(200); // OPT close
+  });
+});
+
+describe('loadState ledger migration', () => {
+  it('loads an old v1 state file with no realized ledger as an empty ledger', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ibkr-realized-'));
+    const path = join(dir, 'positions-state.json');
+    // a pre-ledger file: version 1, live/closing only, NO `realized` key
+    await writeFile(
+      path,
+      JSON.stringify({ version: 1, live: {}, closing: {} }) + '\n',
+      'utf8',
+    );
+    const state = await loadState(path);
+    expect(state.version).toBe(2);
+    expect(state.realized).toEqual({ seenTradeIds: [], cumulativeRealizedByAsset: {} });
+    expect(state.live).toEqual({});
+    expect(state.closing).toEqual({});
+  });
+
+  it('round-trips a v2 state including the ledger', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ibkr-realized-'));
+    const path = join(dir, 'positions-state.json');
+    const state = emptyState();
+    state.realized = { seenTradeIds: ['a'], cumulativeRealizedByAsset: { ACME: 500 } };
+    await saveState(path, state);
+    expect(await loadState(path)).toEqual(state);
   });
 });
