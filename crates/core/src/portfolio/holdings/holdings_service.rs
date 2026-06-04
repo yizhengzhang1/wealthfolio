@@ -286,7 +286,10 @@ impl HoldingsService {
                 purchase_price: asset_info.purchase_price,
                 unrealized_gain: None,
                 unrealized_gain_pct: None,
-                realized_gain: None,
+                realized_gain: Some(MonetaryValue {
+                    local: snapshot_pos.realized_gain,
+                    base: Decimal::ZERO,
+                }),
                 realized_gain_pct: None,
                 total_gain: None,
                 total_gain_pct: None,
@@ -762,9 +765,11 @@ impl HoldingsServiceTrait for HoldingsService {
             if cost_base > Decimal::ZERO {
                 h.unrealized_gain_pct = h.unrealized_gain.as_ref().map(|v| v.base / cost_base);
                 h.total_gain_pct = h.total_gain.as_ref().map(|v| v.base / cost_base);
+                h.realized_gain_pct = h.realized_gain.as_ref().map(|v| v.base / cost_base);
             } else {
                 h.unrealized_gain_pct = None;
                 h.total_gain_pct = None;
+                h.realized_gain_pct = None;
             }
             let prev_close_base = h
                 .prev_close_value
@@ -1631,5 +1636,39 @@ mod tests {
         assert_eq!(holding.price, Some(Decimal::ONE));
         assert_eq!(holding.prev_close_value.as_ref().unwrap().local, dec!(10));
         assert_eq!(holding.prev_close_value.as_ref().unwrap().base, dec!(10));
+    }
+
+    #[tokio::test]
+    async fn realized_gain_from_position_carries_onto_holding() {
+        let account_id = "acc-1";
+        let asset_id = "AAPL";
+
+        let asset = test_asset(asset_id, "AAPL", InstrumentType::Equity);
+
+        let mut position = test_position(account_id, asset_id);
+        position.realized_gain = dec!(250.5);
+
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([(asset_id.to_string(), position)]),
+            ..Default::default()
+        };
+        let service = test_service(
+            snapshot,
+            vec![asset],
+            HashMap::from([(asset_id.to_string(), dec!(100))]),
+        );
+
+        let holdings = service.get_holdings(account_id, "USD").await.unwrap();
+        assert_eq!(holdings.len(), 1);
+        let realized = holdings[0]
+            .realized_gain
+            .as_ref()
+            .expect("realized_gain should be Some for snapshot-fed holding");
+        assert_eq!(realized.local, dec!(250.5));
+        // Base is 0 here: this test stubs valuation with MockValuationService,
+        // which does not run the FX conversion (that is Task 4).
+        assert_eq!(realized.base, dec!(0));
     }
 }
