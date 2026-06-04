@@ -9,7 +9,7 @@ import type {
   ActivityInput,
   HoldingsPositionInput,
 } from './wealthfolio.js';
-import type { ObservedPosition } from './state.js';
+import type { ObservedPosition, ClosingPosition } from './state.js';
 
 // ---------------------------------------------------------------------------
 // Trades → Activities (legacy, kept for the test suite and ad-hoc use)
@@ -268,5 +268,21 @@ export function ibkrPositionToObserved(pos: IbkrPosition): ObservedPosition {
     quantity: String(pos.position),
     avgCost: String(pos.average_price),
     currency: pos.currency,
+  };
+}
+
+/**
+ * Build a holdings-snapshot row for a grace-window position.
+ *  - EXPIRED options keep their last avgCost so the backend (which zero-values
+ *    expired options) renders $0 with the full premium loss.
+ *  - CLOSED positions force avgCost "0" → $0 value, no P&L, no net-worth impact.
+ */
+export function reinjectionToHoldingsPosition(c: ClosingPosition): HoldingsPositionInput {
+  return {
+    symbol: c.occSymbol ?? c.contractDescription,
+    quantity: c.quantity,
+    avgCost: c.kind === 'EXPIRED' ? c.avgCost : '0',
+    currency: c.currency,
+    instrumentType: c.instrumentType,
   };
 }

@@ -6,6 +6,8 @@ import {
   ibkrTradeToActivity,
 } from '../src/mapping.js';
 import { ibkrPositionToObserved, parseOcc } from '../src/mapping.js';
+import { reinjectionToHoldingsPosition } from '../src/mapping.js';
+import type { ClosingPosition } from '../src/state.js';
 
 const ACCOUNT_ID = 'acct-uuid-123';
 const AS_OF = '2026-05-30T12:00:00Z';
@@ -222,5 +224,49 @@ describe('parseOcc', () => {
 
   it('returns null for a malformed symbol', () => {
     expect(parseOcc('NOTANOCC')).toBeNull();
+  });
+});
+
+function closing(overrides: Partial<ClosingPosition> = {}): ClosingPosition {
+  return {
+    contractId: 7,
+    contractDescription: 'SPX ...',
+    occSymbol: 'SPXW  260603P07500000',
+    instrumentType: 'OPTION',
+    expiration: '2026-06-03',
+    quantity: '1',
+    avgCost: '1.8',
+    currency: 'USD',
+    lastSeenDate: '2026-06-03',
+    closedDate: '2026-06-04',
+    kind: 'EXPIRED',
+    ...overrides,
+  };
+}
+
+describe('reinjectionToHoldingsPosition', () => {
+  it('EXPIRED option keeps avgCost so the backend shows the full loss', () => {
+    expect(reinjectionToHoldingsPosition(closing())).toEqual({
+      symbol: 'SPXW  260603P07500000',
+      quantity: '1',
+      avgCost: '1.8',
+      currency: 'USD',
+      instrumentType: 'OPTION',
+    });
+  });
+
+  it('CLOSED position forces avgCost 0 (informational $0 row)', () => {
+    const row = reinjectionToHoldingsPosition(
+      closing({ kind: 'CLOSED', expiration: '2026-07-17', occSymbol: 'INTC  260717P00100000', avgCost: '6.85' }),
+    );
+    expect(row.avgCost).toBe('0');
+    expect(row.symbol).toBe('INTC  260717P00100000');
+  });
+
+  it('CLOSED stock uses contract_description as the symbol', () => {
+    const row = reinjectionToHoldingsPosition(
+      closing({ kind: 'CLOSED', instrumentType: 'EQUITY', occSymbol: null, contractDescription: 'RKLB' }),
+    );
+    expect(row).toEqual({ symbol: 'RKLB', quantity: '1', avgCost: '0', currency: 'USD', instrumentType: 'EQUITY' });
   });
 });
