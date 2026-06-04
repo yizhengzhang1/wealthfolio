@@ -101,3 +101,20 @@ describe('parseSummary', () => {
     expect(() => parseSummary(incomplete)).toThrow();
   });
 });
+
+import { parseOrdersCount } from '../src/ibkr.js';
+
+describe('parseOrdersCount', () => {
+  it('counts the orders array in an envelope', () => {
+    expect(parseOrdersCount({ orders: [{ a: 1 }, { b: 2 }] })).toBe(2);
+  });
+  it('counts a bare array', () => {
+    expect(parseOrdersCount([{ a: 1 }])).toBe(1);
+  });
+  it('returns 0 for empty/missing/garbage', () => {
+    expect(parseOrdersCount({ orders: [] })).toBe(0);
+    expect(parseOrdersCount(null)).toBe(0);
+    expect(parseOrdersCount(undefined)).toBe(0);
+    expect(parseOrdersCount({ nope: true })).toBe(0);
+  });
+});

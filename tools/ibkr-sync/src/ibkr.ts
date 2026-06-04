@@ -146,3 +146,16 @@ export function parseBalances(raw: unknown): IbkrBalance[] {
     : ibkrBalancesResponseSchema.parse(raw).balances;
   return all.filter((b) => b.currency !== 'BASE' && b.cash_balance !== 0);
 }
+
+/**
+ * Count live orders from a `get_account_orders` response. We do NOT store
+ * orders in Wealthfolio (no entity exists) — the count goes in the sync log.
+ * Accepts an `{orders: []}` envelope or a bare array; 0 on anything unexpected.
+ */
+export function parseOrdersCount(raw: unknown): number {
+  if (Array.isArray(raw)) return raw.length;
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { orders?: unknown }).orders)) {
+    return ((raw as { orders: unknown[] }).orders).length;
+  }
+  return 0;
+}
