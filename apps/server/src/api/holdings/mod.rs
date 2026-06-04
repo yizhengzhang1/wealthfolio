@@ -55,4 +55,8 @@ pub fn router() -> Router<Arc<AppState>> {
             "/snapshots/import/check",
             post(handlers::check_holdings_import_handler),
         )
+        .route(
+            "/realized-pnl",
+            get(handlers::get_realized_pnl_for_account),
+        )
 }

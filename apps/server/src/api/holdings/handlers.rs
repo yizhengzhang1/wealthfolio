@@ -28,8 +28,9 @@ use super::dto::{
     AccountIdQuery, AllocationFilterBody, AllocationHoldingsQuery, AssetHoldingsQuery,
     AssetLotsQuery, CheckHoldingsImportRequest, CheckHoldingsImportResult, DeleteSnapshotQuery,
     FilterBody, HistoryFilterBody, HistoryQuery, HoldingItemQuery, HoldingsSnapshotInput,
-    ImportHoldingsCsvRequest, ImportHoldingsCsvResult, SaveManualHoldingsRequest,
-    SnapshotDateQuery, SnapshotInfo, SnapshotsQuery, SymbolCheckResult,
+    ImportHoldingsCsvRequest, ImportHoldingsCsvResult, RealizedAmounts, RealizedEntryInput,
+    RealizedPnlEntry, RealizedPnlQuery, RealizedPnlResponse, RealizedTotal,
+    SaveManualHoldingsRequest, SnapshotDateQuery, SnapshotInfo, SnapshotsQuery, SymbolCheckResult,
 };
 use super::mappers::{parse_date, parse_date_optional, snapshot_source_to_string};
 
@@ -832,4 +833,80 @@ async fn import_single_snapshot_impl(
         .map_err(|e| anyhow::anyhow!("Failed to store realized P&L: {}", e))?;
 
     Ok(())
+}
+
+/// GET /realized-pnl?accountId=... — per-underlying realized P&L,
+/// FX-converted to base, sorted by |base| desc, with a base total.
+/// accountId omitted → all holdings-purpose accounts.
+pub async fn get_realized_pnl_for_account(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<RealizedPnlQuery>,
+) -> ApiResult<Json<RealizedPnlResponse>> {
+    let base = state.base_currency.read().unwrap().clone();
+
+    let account_ids: Vec<String> = if let Some(id) = q.account_id {
+        holdings_account_ids(&state, std::slice::from_ref(&id))?
+    } else {
+        state
+            .account_service
+            .get_active_accounts()?
+            .into_iter()
+            .filter(|account| {
+                account_supports_purpose(&account.account_type, AccountPurpose::Holdings)
+            })
+            .map(|account| account.id)
+            .collect()
+    };
+
+    use std::collections::HashMap;
+    let mut acc: HashMap<String, (String, Decimal, bool, Decimal)> = HashMap::new();
+
+    for account_id in &account_ids {
+        let key = format!("realized_pnl:{}", account_id);
+        let Some(blob) = state.settings_service.get_setting_value(&key)? else {
+            continue;
+        };
+        let entries: Vec<RealizedEntryInput> = serde_json::from_str(&blob)
+            .map_err(|e| anyhow::anyhow!("Corrupt realized_pnl blob for {}: {}", account_id, e))?;
+        for entry in entries {
+            let base_amount = state
+                .fx_service
+                .convert_currency(entry.realized_local, &entry.currency, &base)
+                .map_err(|e| anyhow::anyhow!("FX convert failed: {}", e))?;
+            let slot = acc.entry(entry.underlying.clone()).or_insert((
+                entry.currency.clone(),
+                Decimal::ZERO,
+                true,
+                Decimal::ZERO,
+            ));
+            if slot.2 && slot.0 == entry.currency {
+                slot.1 += entry.realized_local;
+            } else {
+                slot.2 = false;
+            }
+            slot.3 += base_amount;
+        }
+    }
+
+    let mut entries: Vec<RealizedPnlEntry> = acc
+        .into_iter()
+        .map(|(underlying, (currency, local, _consistent, base_sum))| RealizedPnlEntry {
+            underlying,
+            currency,
+            realized: RealizedAmounts {
+                local,
+                base: base_sum,
+            },
+        })
+        .collect();
+
+    entries.sort_by(|a, b| b.realized.base.abs().cmp(&a.realized.base.abs()));
+
+    let total_base: Decimal = entries.iter().map(|e| e.realized.base).sum();
+
+    Ok(Json(RealizedPnlResponse {
+        base_currency: base,
+        entries,
+        total: RealizedTotal { base: total_base },
+    }))
 }
