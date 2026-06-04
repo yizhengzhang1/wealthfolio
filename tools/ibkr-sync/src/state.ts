@@ -92,3 +92,68 @@ export function addDays(date: string, n: number): string {
   const t = Date.parse(`${date}T00:00:00Z`) + n * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);
 }
+
+export interface ReconcileResult {
+  next: SyncState;
+  reinjections: ClosingPosition[];
+}
+
+function isNonZero(quantity: string): boolean {
+  return Number(quantity) !== 0;
+}
+
+/**
+ * Reconcile observed positions against prior state.
+ *  - positions that left the non-zero set become `closing` (EXPIRED if their
+ *    expiration is on/before `today`, else CLOSED), carrying their last-known
+ *    non-zero quantity/avgCost;
+ *  - reappearing positions are revived into `live`;
+ *  - closing entries past the grace window (by close date, or by expiry for
+ *    options) are dropped.
+ * Pure: no I/O, no clock — `today` and `graceDays` are passed in.
+ */
+export function reconcile(
+  prev: SyncState,
+  observed: ObservedPosition[],
+  today: string,
+  graceDays: number,
+): ReconcileResult {
+  const next: SyncState = { version: 1, live: {}, closing: { ...prev.closing } };
+
+  const liveNow = observed.filter((p) => isNonZero(p.quantity));
+  const liveNowIds = new Set(liveNow.map((p) => String(p.contractId)));
+
+  // 1. newly closed: present in prior live, absent from current non-zero set.
+  for (const [id, lp] of Object.entries(prev.live)) {
+    if (!liveNowIds.has(id) && !next.closing[id]) {
+      const expired = lp.expiration != null && lp.expiration <= today;
+      next.closing[id] = { ...lp, closedDate: today, kind: expired ? 'EXPIRED' : 'CLOSED' };
+    }
+  }
+
+  // 2. refresh live from this run; revive any that reappeared.
+  for (const p of liveNow) {
+    const id = String(p.contractId);
+    next.live[id] = {
+      contractId: p.contractId,
+      contractDescription: p.contractDescription,
+      occSymbol: p.occSymbol,
+      instrumentType: p.instrumentType,
+      expiration: p.expiration,
+      quantity: p.quantity,
+      avgCost: p.avgCost,
+      currency: p.currency,
+      lastSeenDate: today,
+    };
+    delete next.closing[id];
+  }
+
+  // 3. prune the grace window.
+  for (const [id, c] of Object.entries(next.closing)) {
+    const beyondClose = daysBetween(c.closedDate, today) > graceDays;
+    const beyondExpiry = c.expiration != null && c.expiration < addDays(today, -graceDays);
+    if (beyondClose || beyondExpiry) delete next.closing[id];
+  }
+
+  return { next, reinjections: Object.values(next.closing) };
+}
