@@ -32,6 +32,14 @@ pkg mirror fell to ~12 KB/s). Hotspot is a plain tunnel — no MITM cert needed.
 - Runtime container egress (e.g. Yahoo quotes): run with `--network host` and
   `-e HTTPS_PROXY=http://127.0.0.1:7892` (clash binds 127.0.0.1 only).
 
+## Git / Upstream
+
+This is a personal fork. Maintain **only the fork** (`origin` =
+`github.com/yizhengzhang1/wealthfolio`). **Never** push, merge, or open a PR
+to the most-upstream `wealthfolio/wealthfolio` — not even for genuine upstream
+bugs. All push/PR/merge targets are `origin`. Don't propose upstream
+contributions unless I explicitly say "this one goes upstream".
+
 ## Plan Mode
 
 - Make the plan extremely concise. Sacrifice grammar for the sake of concision.
