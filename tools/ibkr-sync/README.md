@@ -38,11 +38,11 @@ host crontab                                        every hour at :00
     ▼
 run-hourly.sh                                       sets PATH + HOME, runs:
     │  claude -p "$(cat routine-prompt.txt)"
-    │      --allowedTools mcp__claude_ai_Interactive_Brokers_IBKR__get_account_{positions,balances,summary}, Bash, Read, Write
+    │      --allowedTools mcp__claude_ai_Interactive_Brokers_IBKR__get_account_{positions,balances,summary,orders,trades}, Bash, Read, Write
     │      --permission-mode acceptEdits
     ▼
 headless Claude Code session
-    1. Calls 3 IBKR MCP tools (positions, balances, summary)
+    1. Calls 5 IBKR MCP tools (positions, balances, summary, orders, trades)
     2. Writes /tmp/ibkr-raw.json
     3. Reads password from docs/ibkr-sync/secrets.local.md
     4. Bash: npx tsx src/sync.ts --from=/tmp/ibkr-raw.json
