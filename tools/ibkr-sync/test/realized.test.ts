@@ -277,5 +277,7 @@ describe('sync run() dry-run carries realizedGain', () => {
     const out = lines.join('\n');
     expect(out).toContain('realized ACME');
     expect(out).toContain('500');
+    // realized-by-underlying dry-run line
+    expect(out).toMatch(/realized-by-underlying.*ACME.*700/);
   });
 });

@@ -41,6 +41,7 @@ import {
   saveState,
   reconcile,
   applyTradesToLedger,
+  realizedByUnderlying,
   type RealizedLedger,
 } from './state.js';
 import {
@@ -136,6 +137,7 @@ export async function run(): Promise<number> {
   // Deduped by trade_id across overlapping lookback windows.
   const trades = raw.trades ? parseTradesForRealized(raw.trades) : [];
   nextState.realized = applyTradesToLedger(prevState.realized, trades);
+  const realizedList = realizedByUnderlying(nextState.realized);
 
   // Map positions, recording per-row skip reasons for the summary line.
   // Keep each row paired with its source position so we can later attach the
@@ -189,6 +191,11 @@ export async function run(): Promise<number> {
       if (m.realizedGain !== undefined) {
         console.log(`[dry-run] realized ${m.symbol.padEnd(24)} ${m.realizedGain} ${m.currency}`);
       }
+    }
+    if (realizedList.length > 0) {
+      console.log(
+        `[ibkr-sync] realized-by-underlying: ${realizedList.map((r) => `${r.underlying} ${r.realizedLocal} ${r.currency}`).join(', ')}`,
+      );
     }
     console.log(summaryLine('imported=0 (dry-run)'));
     return 0;
@@ -298,6 +305,7 @@ export async function run(): Promise<number> {
       date: today,
       positions: allPositions,
       cashBalances,
+      realized: realizedList.length > 0 ? realizedList : undefined,
     });
 
     // Step 2: overwrite the synthetic avg-cost quote with IBKR's real

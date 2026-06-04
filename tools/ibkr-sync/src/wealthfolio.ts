@@ -14,6 +14,9 @@
  *   (100ms → 200ms → 400ms).
  */
 
+import type { RealizedUnderlying } from './state.js';
+export type { RealizedUnderlying };
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -127,6 +130,9 @@ export interface HoldingsSnapshotInput {
   positions: HoldingsPositionInput[];
   /** Per-currency cash totals: `{ "USD": "1234.56", "HKD": "0" }`. */
   cashBalances: Record<string, string>;
+  /** Per-underlying realized P&L from the ibkr-sync trade ledger.
+   *  `realizedLocal` is a bare number in the underlying's local currency. */
+  realized?: RealizedUnderlying[];
 }
 
 export interface ImportSnapshotResult {
