@@ -979,7 +979,10 @@ impl HoldingsServiceTrait for HoldingsService {
                 purchase_price,
                 unrealized_gain: None,
                 unrealized_gain_pct: None,
-                realized_gain: None,
+                realized_gain: Some(MonetaryValue {
+                    local: position.realized_gain,
+                    base: Decimal::ZERO,
+                }),
                 realized_gain_pct: None,
                 total_gain: None,
                 total_gain_pct: None,

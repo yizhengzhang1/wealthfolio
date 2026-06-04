@@ -1458,7 +1458,10 @@ pub async fn get_snapshot_by_date(
             purchase_price,
             unrealized_gain: None,
             unrealized_gain_pct: None,
-            realized_gain: None,
+            realized_gain: Some(wealthfolio_core::holdings::MonetaryValue {
+                local: position.realized_gain,
+                base: Decimal::ZERO,
+            }),
             realized_gain_pct: None,
             total_gain: None,
             total_gain_pct: None,
