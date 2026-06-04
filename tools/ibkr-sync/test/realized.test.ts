@@ -88,3 +88,12 @@ describe('positionAssetKey', () => {
     expect(positionAssetKey(r)).toBe('ACME  260702C00140000');
   });
 });
+
+describe('applyTradesToLedger against the trades fixture', () => {
+  it('accumulates the ACME STK close (500) and the ACME OPT close (200)', () => {
+    const trades = parseTradesForRealized(tradesFixture);
+    const ledger = applyTradesToLedger(emptyLedger(), trades);
+    expect(ledger.cumulativeRealizedByAsset['ACME']).toBe(500);     // STK close
+    expect(ledger.cumulativeRealizedByAsset['OPT:ACME']).toBe(200); // OPT close
+  });
+});

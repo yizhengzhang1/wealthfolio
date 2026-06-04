@@ -119,6 +119,43 @@
       "net_amount": 300,
       "realized_pnl": 0,
       "order_id": 1000000006
+    },
+    {
+      "trade_id": "tid-007",
+      "symbol": "ACME",
+      "company_name": "ACME CORP",
+      "sec_type": "STK",
+      "currency": "USD",
+      "side": "SELL",
+      "size": 50,
+      "price": 60,
+      "formatted_price": "60",
+      "order_type": "LIMIT",
+      "description": "60 Limit",
+      "trade_time": "2026-05-30T15:00:00Z",
+      "exchange": "TESTEX",
+      "commission": 0.5,
+      "net_amount": 3000,
+      "realized_pnl": 500,
+      "order_id": 1000000007
+    },
+    {
+      "trade_id": "tid-008",
+      "symbol": "ACME",
+      "sec_type": "OPT",
+      "currency": "USD",
+      "side": "SELL",
+      "size": 1,
+      "price": 9,
+      "formatted_price": "9",
+      "order_type": "LIMIT",
+      "description": "9 Limit",
+      "trade_time": "2026-05-31T15:00:00Z",
+      "exchange": "TESTEX",
+      "commission": 1,
+      "net_amount": 900,
+      "realized_pnl": 200,
+      "order_id": 1000000008
     }
   ]
 }
