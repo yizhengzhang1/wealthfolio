@@ -35,7 +35,8 @@ use wealthfolio_core::errors::Result;
 use wealthfolio_core::events::{DomainEvent, DomainEventSink, NoOpDomainEventSink};
 use wealthfolio_core::fx::currency::{normalize_amount, normalize_currency_code};
 use wealthfolio_core::portfolio::snapshot::{
-    AccountStateSnapshot, Position, SnapshotRepositoryTrait, SnapshotServiceTrait, SnapshotSource,
+    snapshot_total_cost_basis, AccountStateSnapshot, Position, SnapshotRepositoryTrait,
+    SnapshotServiceTrait, SnapshotSource,
 };
 use wealthfolio_core::quotes::constants::DATA_SOURCE_BROKER;
 use wealthfolio_core::quotes::model::Quote;
@@ -1010,7 +1011,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 &position.position_currency,
             );
             let position_cost_basis =
-                (position.quantity * avg_cost).round_dp(HOLDINGS_DECIMAL_PRECISION);
+                snapshot_total_cost_basis(position.quantity, avg_cost, contract_multiplier)
+                    .round_dp(HOLDINGS_DECIMAL_PRECISION);
             total_cost_basis += position_cost_basis;
 
             let position = Position {

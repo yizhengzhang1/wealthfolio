@@ -11,7 +11,7 @@ use crate::errors::Result;
 use crate::events::{DomainEvent, DomainEventSink, NoOpDomainEventSink};
 use crate::fx::FxServiceTrait;
 use crate::portfolio::snapshot::{
-    AccountStateSnapshot, Position, SnapshotServiceTrait, SnapshotSource,
+    snapshot_total_cost_basis, AccountStateSnapshot, Position, SnapshotServiceTrait, SnapshotSource,
 };
 use crate::quotes::constants::DATA_SOURCE_MANUAL;
 use crate::quotes::{Quote, QuoteServiceTrait};
@@ -185,7 +185,11 @@ impl ManualSnapshotService {
                     .await?;
             }
 
-            let total_cost_basis = holding.quantity * holding.average_cost;
+            let total_cost_basis = snapshot_total_cost_basis(
+                holding.quantity,
+                holding.average_cost,
+                asset.contract_multiplier(),
+            );
 
             let position = Position {
                 id: format!("POS-{}-{}", asset.id, request.account_id),

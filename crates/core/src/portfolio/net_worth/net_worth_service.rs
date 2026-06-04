@@ -393,7 +393,8 @@ impl NetWorthServiceTrait for NetWorthService {
                         None => {
                             // No quote found, use cost basis as fallback
                             if position.quantity > Decimal::ZERO {
-                                let implied_price = position.total_cost_basis / position.quantity;
+                                let implied_price = position.total_cost_basis
+                                    / (position.quantity * position.contract_multiplier);
                                 // Use snapshot date as valuation date; cost basis is in position.currency (major unit)
                                 (
                                     implied_price,

@@ -18,6 +18,21 @@ pub fn is_quantity_significant(quantity: &Decimal) -> bool {
     quantity.abs() >= threshold
 }
 
+/// Total cost basis for a position built directly from a holdings snapshot or
+/// broker import (no per-activity lots), where `average_cost` is the per-unit
+/// cost (per-share premium for options). The `contract_multiplier` MUST be
+/// applied so cost basis is symmetric with market value, which the valuation
+/// layer computes as `price * quantity * contract_multiplier`. Omitting it
+/// makes option P&L wrong by the multiplier (typically 100x) and frequently
+/// sign-flipped, since `unrealized_gain = market_value - cost_basis`.
+pub fn snapshot_total_cost_basis(
+    quantity: Decimal,
+    average_cost: Decimal,
+    contract_multiplier: Decimal,
+) -> Decimal {
+    quantity * average_cost * contract_multiplier
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
@@ -756,5 +771,36 @@ impl Position {
         }
         self.recalculate_aggregates();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod cost_basis_tests {
+    use super::snapshot_total_cost_basis;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn option_cost_basis_includes_contract_multiplier() {
+        // 5 contracts, $3.00/share premium, 100 shares/contract → $1,500 true cost.
+        assert_eq!(
+            snapshot_total_cost_basis(dec!(5), dec!(3), dec!(100)),
+            dec!(1500)
+        );
+    }
+
+    #[test]
+    fn short_option_cost_basis_preserves_sign() {
+        assert_eq!(
+            snapshot_total_cost_basis(dec!(-2), dec!(1.5), dec!(100)),
+            dec!(-300)
+        );
+    }
+
+    #[test]
+    fn stock_cost_basis_with_multiplier_one_is_noop() {
+        assert_eq!(
+            snapshot_total_cost_basis(dec!(10), dec!(50), dec!(1)),
+            dec!(500)
+        );
     }
 }
