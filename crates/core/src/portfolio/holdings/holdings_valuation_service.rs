@@ -54,6 +54,48 @@ impl HoldingsValuationService {
         user_today(tz)
     }
 
+    fn apply_realized_and_total_gain(holding: &mut Holding, fx_rate_local_to_base: Decimal) {
+        if let Some(realized) = holding.realized_gain.as_mut() {
+            realized.base = realized.local * fx_rate_local_to_base;
+        }
+
+        let cost_basis_base = holding
+            .cost_basis
+            .as_ref()
+            .map(|c| c.base)
+            .unwrap_or(Decimal::ZERO);
+
+        holding.realized_gain_pct = holding.realized_gain.as_ref().map(|realized| {
+            if cost_basis_base != dec!(0) {
+                (realized.base / cost_basis_base).round_dp(4)
+            } else if realized.base != dec!(0) {
+                dec!(1.0)
+            } else {
+                Decimal::ZERO
+            }
+        });
+
+        let realized = holding
+            .realized_gain
+            .clone()
+            .unwrap_or_else(MonetaryValue::zero);
+
+        holding.total_gain = holding.unrealized_gain.as_ref().map(|unrealized| MonetaryValue {
+            local: unrealized.local + realized.local,
+            base: unrealized.base + realized.base,
+        });
+
+        holding.total_gain_pct = holding.total_gain.as_ref().map(|total| {
+            if cost_basis_base != dec!(0) {
+                (total.base / cost_basis_base).round_dp(4)
+            } else if total.base != dec!(0) {
+                dec!(1.0)
+            } else {
+                Decimal::ZERO
+            }
+        });
+    }
+
     // Private helper to get FX rate with logging and fallback
     fn get_fx_rate_or_fallback(
         &self,
@@ -253,10 +295,7 @@ impl HoldingsValuationService {
             holding.day_change = None;
             holding.day_change_pct = None;
             holding.prev_close_value = None;
-            holding.realized_gain = None;
-            holding.realized_gain_pct = None;
-            holding.total_gain = holding.unrealized_gain.clone();
-            holding.total_gain_pct = holding.unrealized_gain_pct;
+            Self::apply_realized_and_total_gain(holding, fx_rate_local_to_base);
             return Ok(());
         }
 
@@ -398,10 +437,7 @@ impl HoldingsValuationService {
             holding.prev_close_value = None;
         }
 
-        holding.realized_gain = None;
-        holding.realized_gain_pct = None;
-        holding.total_gain = holding.unrealized_gain.clone();
-        holding.total_gain_pct = holding.unrealized_gain_pct;
+        Self::apply_realized_and_total_gain(holding, fx_rate_local_to_base);
 
         Ok(())
     }
@@ -591,10 +627,7 @@ impl HoldingsValuationService {
             holding.prev_close_value = None;
         }
 
-        holding.realized_gain = None;
-        holding.realized_gain_pct = None;
-        holding.total_gain = holding.unrealized_gain.clone();
-        holding.total_gain_pct = holding.unrealized_gain_pct;
+        Self::apply_realized_and_total_gain(holding, fx_rate_local_to_base);
 
         Ok(())
     }

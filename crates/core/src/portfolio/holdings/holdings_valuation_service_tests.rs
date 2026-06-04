@@ -1819,4 +1819,168 @@ mod tests {
         assert!(result.is_ok());
         assert!(holdings.is_empty()); // Should remain empty
     }
+
+    #[tokio::test]
+    async fn realized_gain_sets_base_pct_and_total_base_currency() {
+        let (_fx, market_data_service, valuation_service) = setup_test_env();
+
+        let latest_quote = create_quote("2024-01-10", dec!(150.0), "CAD");
+        let prev_quote = create_quote("2024-01-09", dec!(145.0), "CAD");
+        market_data_service.add_quote_pair("XYZ.TO", latest_quote, Some(prev_quote));
+
+        let mut holding = create_holding(
+            "h1",
+            HoldingType::Security,
+            "XYZ.TO",
+            dec!(10),
+            "CAD",
+            "CAD",
+            Some(dec!(1400.0)),
+            Some("XYZ Corp"),
+        );
+        holding.realized_gain = Some(MonetaryValue {
+            local: dec!(200.0),
+            base: dec!(0.0),
+        });
+        let mut holdings = vec![holding];
+
+        valuation_service
+            .calculate_holdings_live_valuation(&mut holdings)
+            .await
+            .unwrap();
+        let h = &holdings[0];
+
+        // unrealized = 1500 - 1400 = 100 (local==base, fx 1.0)
+        assert_monetary_value_approx(
+            h.unrealized_gain.as_ref(),
+            dec!(100.0),
+            dec!(100.0),
+            TOLERANCE,
+            "Unrealized",
+        );
+        // realized base = 200 * 1.0
+        assert_monetary_value_approx(
+            h.realized_gain.as_ref(),
+            dec!(200.0),
+            dec!(200.0),
+            TOLERANCE,
+            "Realized",
+        );
+        // realized pct = 200 / 1400
+        assert_decimal_approx(
+            h.realized_gain_pct,
+            dec!(0.1429),
+            TOLERANCE,
+            "Realized Pct",
+        );
+        // total = unrealized + realized = 300
+        assert_monetary_value_approx(
+            h.total_gain.as_ref(),
+            dec!(300.0),
+            dec!(300.0),
+            TOLERANCE,
+            "Total",
+        );
+        // total pct = 300 / 1400
+        assert_decimal_approx(
+            h.total_gain_pct,
+            dec!(0.2143),
+            TOLERANCE,
+            "Total Pct",
+        );
+    }
+
+    #[tokio::test]
+    async fn realized_gain_converts_with_fx_like_unrealized() {
+        let (fx, market_data_service, valuation_service) = setup_test_env();
+        let usd_cad = fx.get_latest_exchange_rate("USD", "CAD").unwrap(); // 1.3
+
+        let latest_quote = create_quote("2024-01-10", dec!(100.0), "USD");
+        let prev_quote = create_quote("2024-01-09", dec!(95.0), "USD");
+        market_data_service.add_quote_pair("AAPL", latest_quote, Some(prev_quote));
+
+        let mut holding = create_holding(
+            "h2",
+            HoldingType::Security,
+            "AAPL",
+            dec!(20),
+            "USD",
+            "CAD",
+            Some(dec!(1800.0)),
+            Some("Apple Inc."),
+        );
+        holding.realized_gain = Some(MonetaryValue {
+            local: dec!(100.0),
+            base: dec!(0.0),
+        });
+        let mut holdings = vec![holding];
+
+        valuation_service
+            .calculate_holdings_live_valuation(&mut holdings)
+            .await
+            .unwrap();
+        let h = &holdings[0];
+
+        // realized base = 100 USD * 1.3 = 130 CAD (same factor as cost basis)
+        assert_monetary_value_approx(
+            h.realized_gain.as_ref(),
+            dec!(100.0),
+            dec!(100.0) * usd_cad,
+            TOLERANCE,
+            "Realized FX",
+        );
+        // unrealized base = (2000-1800)*1.3 = 260; total base = 260 + 130 = 390
+        let expected_total_base = dec!(200.0) * usd_cad + dec!(100.0) * usd_cad;
+        assert_monetary_value_approx(
+            h.total_gain.as_ref(),
+            dec!(300.0),
+            expected_total_base,
+            TOLERANCE,
+            "Total FX",
+        );
+    }
+
+    #[tokio::test]
+    async fn none_realized_keeps_total_equal_to_unrealized() {
+        let (_fx, market_data_service, valuation_service) = setup_test_env();
+
+        market_data_service.add_quote_pair(
+            "XYZ.TO",
+            create_quote("2024-01-10", dec!(150.0), "CAD"),
+            Some(create_quote("2024-01-09", dec!(145.0), "CAD")),
+        );
+
+        let mut holdings = vec![create_holding(
+            "h1",
+            HoldingType::Security,
+            "XYZ.TO",
+            dec!(10),
+            "CAD",
+            "CAD",
+            Some(dec!(1400.0)),
+            Some("XYZ Corp"),
+        )];
+
+        valuation_service
+            .calculate_holdings_live_valuation(&mut holdings)
+            .await
+            .unwrap();
+        let h = &holdings[0];
+
+        assert!(h.realized_gain.is_none(), "realized should stay None");
+        assert!(h.realized_gain_pct.is_none(), "realized pct should stay None");
+        assert_monetary_value_approx(
+            h.total_gain.as_ref(),
+            dec!(100.0),
+            dec!(100.0),
+            TOLERANCE,
+            "Total == Unrealized when realized None",
+        );
+        assert_decimal_approx(
+            h.total_gain_pct,
+            dec!(0.0714),
+            TOLERANCE,
+            "Total pct == Unrealized pct",
+        );
+    }
 }
