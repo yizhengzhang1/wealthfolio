@@ -21,6 +21,17 @@ Key directories:
 - Type check: `pnpm type-check`
 - Lint: `pnpm lint`
 
+## Network / Proxy (this machine)
+
+Use the **phone hotspot** proxy `http://127.0.0.1:7892` for ALL downloads/builds.
+The company wired proxy (`109.105.230.22:9090`) throttles some CDNs hard (Alpine
+pkg mirror fell to ~12 KB/s). Hotspot is a plain tunnel — no MITM cert needed.
+
+- `docker build`: add `--network=host` (RUN steps need it to reach the host-only
+  hotspot proxy) + `--build-arg http_proxy=http://127.0.0.1:7892 --build-arg https_proxy=http://127.0.0.1:7892`.
+- Runtime container egress (e.g. Yahoo quotes): run with `--network host` and
+  `-e HTTPS_PROXY=http://127.0.0.1:7892` (clash binds 127.0.0.1 only).
+
 ## Plan Mode
 
 - Make the plan extremely concise. Sacrifice grammar for the sake of concision.
