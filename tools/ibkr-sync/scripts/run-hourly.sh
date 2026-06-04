@@ -17,6 +17,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 export HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}"
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
+# `claude` (plus node/npx) is installed via nvm, which is NOT on the fixed
+# PATH above. Under cron's minimal env this surfaced as
+# `claude: command not found` (exit 127). Prepend the newest nvm-installed
+# node bin when present; skip silently if nvm is absent.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  nvm_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1)"
+  [ -n "$nvm_bin" ] && export PATH="$nvm_bin:$PATH"
+fi
+
 # Auth note: this script intentionally does NOT set CLAUDE_CODE_OAUTH_TOKEN.
 # A long-lived token from `claude setup-token` disables claude.ai
 # connectors (including the IBKR MCP we need). Instead, headless `claude -p`
