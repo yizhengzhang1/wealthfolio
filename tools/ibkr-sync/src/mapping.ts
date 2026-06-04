@@ -12,14 +12,28 @@ import type {
 import type { ObservedPosition, ClosingPosition } from './state.js';
 
 // ---------------------------------------------------------------------------
-// Trades → Asset key (minimal version; expanded in Task 2)
+// Trades → Asset key
 // ---------------------------------------------------------------------------
 
-// Minimal version; expanded in Task 2.
+/**
+ * Asset key for a trade's realized P&L, matching `positionAssetKey`:
+ *  - STK → the bare symbol (same as the snapshot row symbol);
+ *  - OPT → `OPT:<symbol>`; trades carry only a short symbol, not the 21-char
+ *    OCC, so option realized accumulates under this prefix and is NOT matched
+ *    to a specific OCC snapshot row in this phase (see plan Task 3 note);
+ *  - CASH/FX → null (no realized attribution).
+ */
 export function tradeAssetKey(trade: IbkrTrade): string | null {
   if (trade.sec_type === 'CASH') return null;
   if (trade.sec_type === 'OPT') return `OPT:${trade.symbol}`;
   return trade.symbol;
+}
+
+/** Asset key for a snapshot row, matching `tradeAssetKey` for stocks. EQUITY
+ *  rows key on their bare symbol; OPTION rows key on their OCC `symbol`
+ *  (which trade keys cannot reproduce — option realized is not stamped here). */
+export function positionAssetKey(row: HoldingsPositionInput): string {
+  return row.symbol;
 }
 
 // ---------------------------------------------------------------------------

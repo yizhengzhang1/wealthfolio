@@ -130,6 +130,18 @@ export function parseTrades(raw: unknown): IbkrTrade[] {
   return trades.filter((t) => t.sec_type === 'STK');
 }
 
+/**
+ * Parse `get_account_trades` for the realized ledger. Unlike `parseTrades`
+ * (STK-only, legacy), this keeps STK + OPT and drops only CASH/FX, because
+ * realized P&L accrues on option closes too. Accepts envelope or bare array.
+ */
+export function parseTradesForRealized(raw: unknown): IbkrTrade[] {
+  const trades = Array.isArray(raw)
+    ? z.array(ibkrTradeSchema).parse(raw)
+    : ibkrTradesResponseSchema.parse(raw).trades;
+  return trades.filter((t) => t.sec_type !== 'CASH');
+}
+
 /** Parse `get_account_summary` MCP response. */
 export function parseSummary(raw: unknown): IbkrSummary {
   return ibkrSummarySchema.parse(raw);
