@@ -61,8 +61,6 @@ export const HoldingsTable = ({
 }: {
   holdings: Holding[];
   isLoading: boolean;
-  showTotalReturn?: boolean;
-  setShowTotalReturn?: (value: boolean) => void;
   onClassify?: (holding: Holding) => void;
 }) => {
   const navigate = useNavigate();

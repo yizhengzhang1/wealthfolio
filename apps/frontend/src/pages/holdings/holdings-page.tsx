@@ -82,11 +82,6 @@ export const HoldingsPage = () => {
     "holdings-sort-by",
     "marketValue",
   );
-  const [showTotalReturn, setShowTotalReturn] = usePersistentState<boolean>(
-    "holdings-show-total-return",
-    true,
-  );
-
   // Alternative asset action state
   const [editAsset, setEditAsset] = useState<AssetDetailsSheetAsset | null>(null);
   const [updateValueAsset, setUpdateValueAsset] = useState<AlternativeAssetHolding | null>(null);
@@ -405,8 +400,6 @@ export const HoldingsPage = () => {
             <HoldingsTable
               holdings={filteredHoldings ?? []}
               isLoading={isDataLoading}
-              showTotalReturn={showTotalReturn}
-              setShowTotalReturn={setShowTotalReturn}
               onClassify={(holding) =>
                 setClassifyAsset({
                   id: holding.instrument?.id ?? holding.id,
@@ -431,7 +424,6 @@ export const HoldingsPage = () => {
               showSearch={true}
               showFilterButton={false}
               sortBy={sortBy}
-              showTotalReturn={showTotalReturn}
               typeOptions={availableTypeOptions}
             />
           </div>

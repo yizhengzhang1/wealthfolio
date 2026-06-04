@@ -30,8 +30,6 @@ interface HoldingsTableMobileProps {
   showFilterButton?: boolean;
   sortBy?: "symbol" | "marketValue";
   setSortBy?: (value: "symbol" | "marketValue") => void;
-  showTotalReturn?: boolean;
-  setShowTotalReturn?: (value: boolean) => void;
   typeOptions?: { value: string; label: string }[];
 }
 
@@ -86,8 +84,6 @@ export const HoldingsTableMobile = ({
   showFilterButton = true,
   sortBy: controlledSortBy,
   setSortBy: controlledSetSortBy,
-  showTotalReturn: _showTotalReturn,
-  setShowTotalReturn: _setShowTotalReturn,
   typeOptions,
 }: HoldingsTableMobileProps) => {
   const { isBalanceHidden } = useBalancePrivacy();
