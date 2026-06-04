@@ -52,7 +52,7 @@ export interface RealizedLedger {
 }
 
 export interface SyncState {
-  version: 2;
+  version: 3;
   lastRunUtc?: string;
   live: Record<string, LivePosition>;
   closing: Record<string, ClosingPosition>;
@@ -64,7 +64,7 @@ export function emptyLedger(): RealizedLedger {
 }
 
 export function emptyState(): SyncState {
-  return { version: 2, live: {}, closing: {}, realized: emptyLedger() };
+  return { version: 3, live: {}, closing: {}, realized: emptyLedger() };
 }
 
 /**
@@ -98,12 +98,25 @@ export async function loadState(path: string): Promise<SyncState> {
     if (
       raw &&
       typeof raw === 'object' &&
-      ((raw as { version: number }).version === 1 || (raw as { version: number }).version === 2) &&
+      (raw as { version: number }).version !== undefined &&
       (raw as SyncState).live &&
       (raw as SyncState).closing
     ) {
       const s = raw as Omit<SyncState, 'version'> & { version: number };
-      return { ...s, version: 2, realized: s.realized ?? emptyLedger() } as SyncState;
+      if (s.version === 3) {
+        return { ...s, version: 3, realized: s.realized ?? emptyLedger() } as SyncState;
+      }
+      // v1 or v2: migrate to v3, clearing the realized ledger so the next run
+      // rebuilds it with currency-aware entries from scratch.
+      console.warn(
+        `[ibkr-sync] state: migrating v${s.version}→v3 at ${path}; realized ledger cleared for currency-aware rebuild`,
+      );
+      return {
+        version: 3,
+        live: s.live,
+        closing: s.closing,
+        realized: emptyLedger(),
+      } as SyncState;
     }
     console.warn(`[ibkr-sync] state: unexpected shape at ${path}; starting empty`);
     return emptyState();
@@ -159,7 +172,7 @@ export function reconcile(
   today: string,
   graceDays: number,
 ): ReconcileResult {
-  const next: SyncState = { version: 2, live: {}, closing: { ...prev.closing }, realized: prev.realized };
+  const next: SyncState = { version: 3, live: {}, closing: { ...prev.closing }, realized: prev.realized };
 
   const liveNow = observed.filter((p) => isNonZero(p.quantity));
   const liveNowIds = new Set(liveNow.map((p) => String(p.contractId)));

@@ -115,17 +115,45 @@ describe('loadState ledger migration', () => {
       'utf8',
     );
     const state = await loadState(path);
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.realized).toEqual({ seenTradeIds: [], cumulativeRealizedByAsset: {} });
     expect(state.live).toEqual({});
     expect(state.closing).toEqual({});
   });
 
-  it('round-trips a v2 state including the ledger', async () => {
+  it('v2→v3 migration clears seenTradeIds and cumulativeRealizedByAsset, keeps live/closing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ibkr-realized-'));
+    const path = join(dir, 'state.json');
+    // a v2 file with populated numeric ledger + a live position
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 2,
+        live: { '1': { contractId: 1, contractDescription: 'ACME', occSymbol: null,
+                        instrumentType: 'EQUITY', expiration: null, quantity: '10',
+                        avgCost: '90', currency: 'USD', lastSeenDate: '2026-06-04' } },
+        closing: {},
+        realized: { seenTradeIds: ['old-1', 'old-2'], cumulativeRealizedByAsset: { ACME: 500 } },
+      }) + '\n',
+      'utf8',
+    );
+    const state = await loadState(path);
+    expect(state.version).toBe(3);
+    expect(state.realized.seenTradeIds).toEqual([]);
+    expect(state.realized.cumulativeRealizedByAsset).toEqual({});
+    // live/closing are preserved across migration
+    expect(state.live['1'].contractDescription).toBe('ACME');
+    expect(state.closing).toEqual({});
+  });
+
+  it('round-trips a v3 state including the currency-aware ledger', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ibkr-realized-'));
     const path = join(dir, 'positions-state.json');
-    const state = emptyState();
-    state.realized = { seenTradeIds: ['a'], cumulativeRealizedByAsset: { ACME: { amount: 500, currency: 'USD' } } };
+    const state = emptyState(); // emptyState() will return version:3 after Step 2.2
+    state.realized = {
+      seenTradeIds: ['a'],
+      cumulativeRealizedByAsset: { ACME: { amount: 500, currency: 'USD' } },
+    };
     await saveState(path, state);
     expect(await loadState(path)).toEqual(state);
   });

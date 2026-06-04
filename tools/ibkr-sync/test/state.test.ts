@@ -36,7 +36,7 @@ describe('state load/save', () => {
     const dir = await mkdtemp(join(tmpdir(), 'ibkr-state-'));
     const path = join(dir, 'positions-state.json');
     const original: SyncState = {
-      version: 2,
+      version: 3,
       live: {
         '1': {
           contractId: 1,
