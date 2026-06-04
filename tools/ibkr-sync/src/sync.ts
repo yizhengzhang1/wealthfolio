@@ -24,12 +24,21 @@ import {
   parsePositions,
   parseBalances,
   parseSummary,
+  parseOrdersCount,
   type IbkrPosition,
 } from './ibkr.js';
 import {
   ibkrPositionToHoldingsPosition,
+  ibkrPositionToObserved,
+  reinjectionToHoldingsPosition,
   parseOptionPosition,
+  parseOcc,
 } from './mapping.js';
+import {
+  loadState,
+  saveState,
+  reconcile,
+} from './state.js';
 import {
   WealthfolioClient,
   WealthfolioApiError,
@@ -45,6 +54,8 @@ interface CliArgs {
   providerAccountId: string;
   baseUrl: string;
   password: string;
+  statePath: string;
+  graceDays: number;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -74,6 +85,8 @@ function parseArgs(argv: string[]): CliArgs {
     providerAccountId: String(opts['provider-account-id'] ?? 'IBKR-MAIN'),
     baseUrl,
     password,
+    statePath: String(opts['state'] ?? 'state/positions-state.json'),
+    graceDays: Number(process.env.IBKR_CLOSING_GRACE_DAYS ?? '1'),
   };
 }
 
@@ -92,6 +105,13 @@ async function run(): Promise<number> {
   const balances = raw.balances ? parseBalances(raw.balances) : [];
   const summary = raw.summary ? parseSummary(raw.summary) : null;
 
+  // Reconcile against prior runs to find just-closed / just-expired positions.
+  const today = todayUtc();
+  const observed = positions.map(ibkrPositionToObserved);
+  const prevState = await loadState(args.statePath);
+  const { next: nextState, reinjections } = reconcile(prevState, observed, today, args.graceDays);
+  nextState.lastRunUtc = new Date().toISOString();
+
   // Map positions, recording per-row skip reasons for the summary line.
   // Keep each row paired with its source position so we can later attach the
   // pre-created option asset UUID (by contract_id) before posting.
@@ -109,18 +129,23 @@ async function run(): Promise<number> {
   const stkCount = mapped.filter((m) => m.instrumentType === 'EQUITY').length;
   const optCount = mapped.filter((m) => m.instrumentType === 'OPTION').length;
 
+  const reinjectedRows: HoldingsPositionInput[] = reinjections.map(reinjectionToHoldingsPosition);
+  const expiredCount = reinjections.filter((r) => r.kind === 'EXPIRED').length;
+  const closedCount = reinjections.length - expiredCount;
+  const allPositions: HoldingsPositionInput[] = [...mapped, ...reinjectedRows];
+
   const cashBalances: Record<string, string> = {};
   for (const b of balances) {
     cashBalances[b.currency] = String(b.cash_balance);
   }
 
-  const date = todayUtc();
+  const orderCount = parseOrdersCount(raw.orders);
   const summaryLine = (extra: string): string =>
-    `[ibkr-sync] summary: date=${date} positions=${positions.length} (stk=${stkCount} opt=${optCount} skipped=${skipped}) cash_currencies=${Object.keys(cashBalances).length}${summary ? ` net_liq=${summary.net_liquidation.toFixed(2)}${summary.currency}` : ''} ${extra}`;
+    `[ibkr-sync] summary: date=${today} positions=${positions.length} (stk=${stkCount} opt=${optCount} skipped=${skipped}) closing=${reinjections.length} (expired=${expiredCount} closed=${closedCount}) cash_currencies=${Object.keys(cashBalances).length}${summary ? ` net_liq=${summary.net_liquidation.toFixed(2)}${summary.currency}` : ''} orders=${orderCount} ${extra}`;
 
   if (args.dryRun) {
-    console.log(`[ibkr-sync] loaded (dry-run): ${mapped.length} positions, ${Object.keys(cashBalances).length} cash currencies`);
-    for (const m of mapped) {
+    console.log(`[ibkr-sync] loaded (dry-run): ${allPositions.length} positions, ${Object.keys(cashBalances).length} cash currencies`);
+    for (const m of allPositions) {
       console.log(
         `[dry-run] ${m.instrumentType?.padEnd(6)} ${m.quantity.padStart(8)} ${m.symbol.padEnd(24)} @ ${m.avgCost} ${m.currency}`,
       );
@@ -185,6 +210,39 @@ async function run(): Promise<number> {
     console.log(`[ibkr-sync] option assets ensured: ${optionAssetIds.size}`);
   }
 
+  // Re-injected options need their asset to exist too (it normally does from
+  // when the position was live). findOrCreateAsset is idempotent — it matches
+  // the existing asset by (instrumentSymbol, OPTION) and returns it.
+  const reinjectAssetIds = new Map<number, string>(); // contractId -> asset.id
+  for (const c of reinjections) {
+    if (c.instrumentType !== 'OPTION' || !c.occSymbol) continue;
+    const spec = parseOcc(c.occSymbol);
+    const asset = await client.findOrCreateAsset({
+      quoteCcy: c.currency,
+      quoteMode: 'MANUAL',
+      instrumentType: 'OPTION',
+      instrumentSymbol: c.occSymbol,
+      displayCode: c.occSymbol,
+      metadata: spec
+        ? {
+            option: {
+              underlyingAssetId: spec.underlying,
+              expiration: spec.expiration,
+              right: spec.right,
+              strike: spec.strike,
+              multiplier: String(spec.multiplier),
+              occSymbol: c.occSymbol,
+            },
+          }
+        : { option: { occSymbol: c.occSymbol } },
+    });
+    reinjectAssetIds.set(c.contractId, asset.id);
+  }
+  reinjections.forEach((c, i) => {
+    const id = reinjectAssetIds.get(c.contractId);
+    if (id) reinjectedRows[i].assetId = id;
+  });
+
   // Bind each option snapshot row to its pre-created asset UUID. With assetId
   // set, the snapshot importer resolves the asset by id directly instead of
   // re-deriving it from the OCC string via instrument_key canonicalization —
@@ -200,8 +258,8 @@ async function run(): Promise<number> {
     // would clobber any real market quote we wrote first — so it MUST run
     // before importQuotes, never after.
     const result = await client.importHoldingsSnapshot(account.id, {
-      date,
-      positions: mapped,
+      date: today,
+      positions: allPositions,
       cashBalances,
     });
 
@@ -218,7 +276,7 @@ async function run(): Promise<number> {
       if (!assetId) continue; // STK or skipped option
       quoteRows.push({
         symbol: assetId,
-        date,
+        date: today,
         close: p.market_price,
         currency: p.currency,
       });
@@ -241,6 +299,7 @@ async function run(): Promise<number> {
         `imported=${result.snapshotsImported}/${result.snapshotsImported + result.snapshotsFailed} quotes=${quotesImported}/${quoteRows.length}${quoteError ? ` quote_err=${quoteError}` : ''}${result.errors.length ? ` errors=${JSON.stringify(result.errors).slice(0, 200)}` : ''}`,
       ),
     );
+    await saveState(args.statePath, nextState);
     return result.snapshotsFailed > 0 || quoteError ? 1 : 0;
   } catch (err) {
     const msg =
