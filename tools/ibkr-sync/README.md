@@ -104,6 +104,14 @@ The routine prompt (`scripts/routine-prompt.txt`) bakes in:
 
 Change any of these by editing the prompt file — no rebuild needed.
 
+Env knobs:
+- Closed/expired grace window: `IBKR_CLOSING_GRACE_DAYS` (sync tool, default 1)
+  and `WF_EXPIRED_OPTION_GRACE_DAYS` (backend, default 1). Just-closed/expired
+  positions linger in holdings for this many days, then disappear. State lives
+  in `state/positions-state.json` (gitignored). See
+  `docs/ibkr-sync/2026-06-04-expiry-grace-design.md`.
+- Open orders are fetched only to print `orders=<n>` in the summary; not stored.
+
 For DAYS_30 / longer backfill, run a one-off manually with a separate prompt
 or directly invoke `sync.ts` after a manual MCP dump (see CONTEXT.md).
 
