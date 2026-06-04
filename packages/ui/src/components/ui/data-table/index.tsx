@@ -42,6 +42,7 @@ interface DataTableProps<TData, TValue> {
   getSubRows?: (originalRow: TData, index: number) => TData[] | undefined;
   defaultExpanded?: ExpandedState;
   filterFromLeafRows?: boolean;
+  pinFirstColumn?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -60,6 +61,7 @@ export function DataTable<TData, TValue>({
   getSubRows,
   defaultExpanded,
   filterFromLeafRows = false,
+  pinFirstColumn = false,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] = storageKey
@@ -127,9 +129,13 @@ export function DataTable<TData, TValue>({
           <TableHeader className="bg-muted/50 sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
+                {headerGroup.headers.map((header, index) => {
+                  const pinned = pinFirstColumn && index === 0;
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead
+                      key={header.id}
+                      className={pinned ? "bg-muted/50 sticky left-0 z-20" : undefined}
+                    >
                       {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                     </TableHead>
                   );
@@ -141,8 +147,17 @@ export function DataTable<TData, TValue>({
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                  {row.getVisibleCells().map((cell, index) => (
+                    <TableCell
+                      key={cell.id}
+                      className={
+                        pinFirstColumn && index === 0
+                          ? "bg-background sticky left-0 z-10"
+                          : undefined
+                      }
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
                   ))}
                 </TableRow>
               ))
