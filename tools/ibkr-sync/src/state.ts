@@ -6,6 +6,8 @@
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import type { IbkrTrade } from './ibkr.js';
+import { tradeAssetKey } from './mapping.js';
 
 export type InstrumentKind = 'EQUITY' | 'OPTION';
 export type ClosingKind = 'EXPIRED' | 'CLOSED';
@@ -41,15 +43,50 @@ export interface ClosingPosition extends LivePosition {
   kind: ClosingKind;
 }
 
+/** Cumulative realized P&L, accumulated from IBKR trades and deduped by
+ *  trade_id. `cumulativeRealizedByAsset` is keyed by the same asset key the
+ *  snapshot row uses (stock symbol, or `OPT:<symbol>` for options). */
+export interface RealizedLedger {
+  seenTradeIds: string[];
+  cumulativeRealizedByAsset: Record<string, number>;
+}
+
 export interface SyncState {
-  version: 1;
+  version: 2;
   lastRunUtc?: string;
   live: Record<string, LivePosition>;
   closing: Record<string, ClosingPosition>;
+  realized: RealizedLedger;
+}
+
+export function emptyLedger(): RealizedLedger {
+  return { seenTradeIds: [], cumulativeRealizedByAsset: {} };
 }
 
 export function emptyState(): SyncState {
-  return { version: 1, live: {}, closing: {} };
+  return { version: 2, live: {}, closing: {}, realized: emptyLedger() };
+}
+
+/**
+ * Fold a batch of IBKR trades into a realized ledger. Pure.
+ *  - each unseen trade_id adds its realized_pnl to its asset key and is marked seen;
+ *  - already-seen trade_ids are ignored (dedup across overlapping lookback windows);
+ *  - trades with no asset key (CASH/FX) are marked seen but contribute nothing.
+ */
+export function applyTradesToLedger(
+  ledger: RealizedLedger,
+  trades: IbkrTrade[],
+): RealizedLedger {
+  const seen = new Set(ledger.seenTradeIds);
+  const byAsset: Record<string, number> = { ...ledger.cumulativeRealizedByAsset };
+  for (const t of trades) {
+    if (seen.has(t.trade_id)) continue;
+    seen.add(t.trade_id);
+    const key = tradeAssetKey(t);
+    if (key === null) continue;
+    byAsset[key] = (byAsset[key] ?? 0) + t.realized_pnl;
+  }
+  return { seenTradeIds: [...seen], cumulativeRealizedByAsset: byAsset };
 }
 
 export async function loadState(path: string): Promise<SyncState> {
@@ -58,11 +95,12 @@ export async function loadState(path: string): Promise<SyncState> {
     if (
       raw &&
       typeof raw === 'object' &&
-      (raw as SyncState).version === 1 &&
+      ((raw as { version: number }).version === 1 || (raw as { version: number }).version === 2) &&
       (raw as SyncState).live &&
       (raw as SyncState).closing
     ) {
-      return raw as SyncState;
+      const s = raw as Omit<SyncState, 'version'> & { version: number };
+      return { ...s, version: 2, realized: s.realized ?? emptyLedger() } as SyncState;
     }
     console.warn(`[ibkr-sync] state: unexpected shape at ${path}; starting empty`);
     return emptyState();
@@ -118,7 +156,7 @@ export function reconcile(
   today: string,
   graceDays: number,
 ): ReconcileResult {
-  const next: SyncState = { version: 1, live: {}, closing: { ...prev.closing } };
+  const next: SyncState = { version: 2, live: {}, closing: { ...prev.closing }, realized: prev.realized };
 
   const liveNow = observed.filter((p) => isNonZero(p.quantity));
   const liveNowIds = new Set(liveNow.map((p) => String(p.contractId)));

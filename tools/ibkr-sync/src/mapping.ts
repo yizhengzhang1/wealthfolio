@@ -12,6 +12,17 @@ import type {
 import type { ObservedPosition, ClosingPosition } from './state.js';
 
 // ---------------------------------------------------------------------------
+// Trades → Asset key (minimal version; expanded in Task 2)
+// ---------------------------------------------------------------------------
+
+// Minimal version; expanded in Task 2.
+export function tradeAssetKey(trade: IbkrTrade): string | null {
+  if (trade.sec_type === 'CASH') return null;
+  if (trade.sec_type === 'OPT') return `OPT:${trade.symbol}`;
+  return trade.symbol;
+}
+
+// ---------------------------------------------------------------------------
 // Trades → Activities (legacy, kept for the test suite and ad-hoc use)
 // ---------------------------------------------------------------------------
 
