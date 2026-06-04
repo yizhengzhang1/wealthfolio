@@ -25,6 +25,7 @@ import {
   parseBalances,
   parseSummary,
   parseOrdersCount,
+  parseTradesForRealized,
   type IbkrPosition,
 } from './ibkr.js';
 import {
@@ -33,11 +34,14 @@ import {
   reinjectionToHoldingsPosition,
   parseOptionPosition,
   parseOcc,
+  positionAssetKey,
 } from './mapping.js';
 import {
   loadState,
   saveState,
   reconcile,
+  applyTradesToLedger,
+  type RealizedLedger,
 } from './state.js';
 import {
   WealthfolioClient,
@@ -94,7 +98,23 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function run(): Promise<number> {
+/**
+ * Stamp `realizedGain` onto each snapshot row whose asset key has a ledger
+ * entry. Pure: returns new row objects, never mutates the input. Rows with no
+ * ledger entry are returned unchanged (realizedGain stays absent → backend
+ * defaults it to 0).
+ */
+export function stampRealizedGain(
+  rows: HoldingsPositionInput[],
+  ledger: RealizedLedger,
+): HoldingsPositionInput[] {
+  return rows.map((row) => {
+    const realized = ledger.cumulativeRealizedByAsset[positionAssetKey(row)];
+    return realized === undefined ? row : { ...row, realizedGain: realized };
+  });
+}
+
+export async function run(): Promise<number> {
   const args = parseArgs(process.argv);
   const raw = JSON.parse(await readFile(args.from, 'utf8')) as Record<
     string,
@@ -111,6 +131,11 @@ async function run(): Promise<number> {
   const prevState = await loadState(args.statePath);
   const { next: nextState, reinjections } = reconcile(prevState, observed, today, args.graceDays);
   nextState.lastRunUtc = new Date().toISOString();
+
+  // Accumulate realized P&L from IBKR trades into the persisted ledger.
+  // Deduped by trade_id across overlapping lookback windows.
+  const trades = raw.trades ? parseTradesForRealized(raw.trades) : [];
+  nextState.realized = applyTradesToLedger(prevState.realized, trades);
 
   // Map positions, recording per-row skip reasons for the summary line.
   // Keep each row paired with its source position so we can later attach the
@@ -132,7 +157,10 @@ async function run(): Promise<number> {
   const reinjectedRows: HoldingsPositionInput[] = reinjections.map(reinjectionToHoldingsPosition);
   const expiredCount = reinjections.filter((r) => r.kind === 'EXPIRED').length;
   const closedCount = reinjections.length - expiredCount;
-  const allPositions: HoldingsPositionInput[] = [...mapped, ...reinjectedRows];
+  const allPositions: HoldingsPositionInput[] = stampRealizedGain(
+    [...mapped, ...reinjectedRows],
+    nextState.realized,
+  );
 
   const cashBalances: Record<string, string> = {};
   for (const b of balances) {
@@ -152,6 +180,15 @@ async function run(): Promise<number> {
     }
     for (const [ccy, amt] of Object.entries(cashBalances)) {
       console.log(`[dry-run] cash ${ccy}: ${amt}`);
+    }
+    const realizedKeys = Object.keys(nextState.realized.cumulativeRealizedByAsset);
+    console.log(
+      `[ibkr-sync] realized ledger: ${realizedKeys.length} assets, ${nextState.realized.seenTradeIds.length} trades seen`,
+    );
+    for (const m of allPositions) {
+      if (m.realizedGain !== undefined) {
+        console.log(`[dry-run] realized ${m.symbol.padEnd(24)} ${m.realizedGain} ${m.currency}`);
+      }
     }
     console.log(summaryLine('imported=0 (dry-run)'));
     return 0;
@@ -313,10 +350,13 @@ async function run(): Promise<number> {
   }
 }
 
-run().then(
-  (code) => process.exit(code),
-  (err) => {
-    console.error('[ibkr-sync] fatal:', err instanceof Error ? err.stack : err);
-    process.exit(2);
-  },
-);
+// Only run when executed directly (not when imported by tests).
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  run().then(
+    (code) => process.exit(code),
+    (err) => {
+      console.error('[ibkr-sync] fatal:', err instanceof Error ? err.stack : err);
+      process.exit(2);
+    },
+  );
+}

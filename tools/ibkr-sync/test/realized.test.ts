@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyTradesToLedger, emptyLedger, loadState, saveState, emptyState } from '../src/state.js';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -125,5 +125,66 @@ describe('loadState ledger migration', () => {
     state.realized = { seenTradeIds: ['a'], cumulativeRealizedByAsset: { ACME: 500 } };
     await saveState(path, state);
     expect(await loadState(path)).toEqual(state);
+  });
+});
+
+import { stampRealizedGain } from '../src/sync.js';
+
+describe('stampRealizedGain', () => {
+  it('stamps realizedGain on rows whose asset key is in the ledger', () => {
+    const ledger = { seenTradeIds: ['x'], cumulativeRealizedByAsset: { ACME: 500, ZZZ: -100 } };
+    const rows: HoldingsPositionInput[] = [
+      { symbol: 'ACME', quantity: '10', currency: 'USD', instrumentType: 'EQUITY' },
+      { symbol: 'NOPE', quantity: '5', currency: 'USD', instrumentType: 'EQUITY' },
+    ];
+    const out = stampRealizedGain(rows, ledger);
+    expect(out[0].realizedGain).toBe(500);
+    expect(out[1].realizedGain).toBeUndefined();
+  });
+
+  it('does not mutate the input rows', () => {
+    const ledger = { seenTradeIds: [], cumulativeRealizedByAsset: { ACME: 500 } };
+    const rows: HoldingsPositionInput[] = [
+      { symbol: 'ACME', quantity: '10', currency: 'USD', instrumentType: 'EQUITY' },
+    ];
+    stampRealizedGain(rows, ledger);
+    expect(rows[0].realizedGain).toBeUndefined();
+  });
+});
+
+import { run } from '../src/sync.js';
+import positionsFixture from '../fixtures/ibkr-positions.json' with { type: 'json' };
+
+describe('sync run() dry-run carries realizedGain', () => {
+  it('stamps ACME realized (500) onto the ACME stock row in the dry-run output', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ibkr-sync-run-'));
+    const rawPath = join(dir, 'raw.json');
+    const statePath = join(dir, 'state.json');
+    await writeFile(
+      rawPath,
+      JSON.stringify({ positions: positionsFixture, trades: tradesFixture }),
+      'utf8',
+    );
+
+    const prevArgv = process.argv;
+    const prevPwd = process.env.WEALTHFOLIO_PASSWORD;
+    process.env.WEALTHFOLIO_PASSWORD = 'x';
+    process.argv = ['node', 'sync.ts', `--from=${rawPath}`, `--state=${statePath}`, '--dry-run'];
+
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a) => {
+      lines.push(a.join(' '));
+    });
+    try {
+      const code = await run();
+      expect(code).toBe(0);
+    } finally {
+      spy.mockRestore();
+      process.argv = prevArgv;
+      process.env.WEALTHFOLIO_PASSWORD = prevPwd;
+    }
+    const out = lines.join('\n');
+    expect(out).toContain('realized ACME');
+    expect(out).toContain('500');
   });
 });
