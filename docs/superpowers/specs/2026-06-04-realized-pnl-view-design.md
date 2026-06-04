@@ -107,8 +107,10 @@ migration), convert to base on read.
 - **Read endpoint.** New `GET /api/v1/realized-pnl?accountId=…` (account-scope
   aware like `/income`): load the blob(s) for the resolved account ids, convert
   each entry's `realizedLocal` → base with the same FX path `holdings_service`
-  uses, and return `{ entries: [{ underlying, currency, realized: { local, base }
-  }], total: { base } }` sorted by `|base|` desc. For multi-account scope, merge
+  uses, and return `{ baseCurrency, entries: [{ underlying, currency, realized: {
+  local, base } }], total: { base } }` sorted by `|base|` desc (`baseCurrency` is
+  the user's base-currency setting, so the frontend labels base amounts without
+  assuming USD). For multi-account scope, merge
   by underlying (summing base; local only meaningful per-currency, so keep the
   first currency or omit local when an underlying spans currencies — single
   account is the norm).
