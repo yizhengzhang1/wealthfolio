@@ -319,6 +319,7 @@ function MetricCell({
   pct,
   currency,
   showPct,
+  colorFormat,
   isHidden,
 }: {
   topValue: number | null;
@@ -326,12 +327,13 @@ function MetricCell({
   pct?: number | null;
   currency: string;
   showPct: boolean;
+  colorFormat: boolean;
   isHidden: boolean;
 }) {
   if (topValue == null) return <div className="min-h-[40px] px-4" />;
   return (
     <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-      <AmountDisplay value={topValue} currency={currency} colorFormat isHidden={isHidden} />
+      <AmountDisplay value={topValue} currency={currency} colorFormat={colorFormat} isHidden={isHidden} />
       {showPct && pct != null ? (
         <GainPercent className="text-xs" value={pct} />
       ) : bottomValue != null ? (
@@ -372,6 +374,7 @@ function buildMetricColumn(
             pct={metric.groupPct?.(data)}
             currency={currency}
             showPct={metric.showPct}
+            colorFormat={metric.colorFormat}
             isHidden={isHidden}
           />
         );
@@ -383,6 +386,7 @@ function buildMetricColumn(
             pct={metric.strategyPct?.(data)}
             currency={currency}
             showPct={metric.showPct}
+            colorFormat={metric.colorFormat}
             isHidden={isHidden}
           />
         );
@@ -394,6 +398,7 @@ function buildMetricColumn(
           pct={metric.leafPct?.(data)}
           currency={currency}
           showPct={metric.showPct}
+          colorFormat={metric.colorFormat}
           isHidden={isHidden}
         />
       );

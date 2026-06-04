@@ -20,6 +20,8 @@ export interface MetricColumn {
   defaultVisible: boolean;
   /** Only the Unrealized column renders a percent under its amount. */
   showPct: boolean;
+  /** Whether the top amount is colored green/red by sign (P&L columns only). */
+  colorFormat: boolean;
 
   // Leaf-row (Holding) accessors. `leafTop` is required; bottom/pct optional.
   leafTop: (h: Holding) => number;
@@ -56,6 +58,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "MktVal / Qty",
     defaultVisible: true,
     showPct: false,
+    colorFormat: false,
     leafTop: (h) => local(h.marketValue),
     leafBottom: (h) => h.quantity,
     groupTop: (g) => g.marketValueBase,
@@ -66,6 +69,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Price / AvgCost",
     defaultVisible: true,
     showPct: false,
+    colorFormat: false,
     leafTop: (h) => h.price ?? 0,
     leafBottom: (h) => leafAvgCost(h),
     // Underlying group shows the underlying price; strategy group is blank.
@@ -77,6 +81,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Day",
     defaultVisible: true,
     showPct: false,
+    colorFormat: true,
     leafTop: (h) => local(h.dayChange),
     groupTop: (g) => g.dayChangeBase,
     strategyTop: (s) => s.dayChangeBase,
@@ -86,6 +91,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Unrealized",
     defaultVisible: false,
     showPct: true,
+    colorFormat: true,
     leafTop: (h) => local(h.unrealizedGain),
     leafPct: (h) => pctOrNull(local(h.unrealizedGain), local(h.costBasis)),
     groupTop: (g) => g.unrealizedGainBase,
@@ -98,6 +104,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Realized",
     defaultVisible: false,
     showPct: false,
+    colorFormat: true,
     leafTop: (h) => local(h.realizedGain),
     groupTop: (g) => g.realizedGainBase,
     strategyTop: (s) => s.realizedGainBase,
@@ -107,6 +114,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Holding P&L",
     defaultVisible: false,
     showPct: false,
+    colorFormat: true,
     leafTop: (h) => local(h.totalGain),
     groupTop: (g) => g.totalGainBase,
     strategyTop: (s) => s.totalGainBase,
@@ -116,6 +124,7 @@ export const HOLDING_METRIC_COLUMNS: MetricColumn[] = [
     label: "Weight",
     defaultVisible: false,
     showPct: false,
+    colorFormat: false,
     leafTop: (h) => h.weight,
     groupTop: (g) => g.weight,
     strategyTop: (s) => s.weight,

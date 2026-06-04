@@ -55,6 +55,11 @@ describe("HOLDING_METRIC_COLUMNS shape", () => {
     const visible = HOLDING_METRIC_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id);
     expect(visible).toEqual(["marketValue", "priceAvgCost", "day"]);
   });
+
+  it("colors only the P&L columns", () => {
+    const colored = HOLDING_METRIC_COLUMNS.filter((c) => c.colorFormat).map((c) => c.id);
+    expect(colored).toEqual(["day", "unrealized", "realized", "holding"]);
+  });
 });
 
 describe("leafAvgCost", () => {
