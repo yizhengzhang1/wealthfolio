@@ -179,6 +179,20 @@ pub struct HoldingsPositionInput {
     pub realized_gain: rust_decimal::Decimal,
 }
 
+/// A single per-underlying realized P&L entry from the ibkr-sync ledger.
+/// `realizedLocal` is a bare JSON number (rust_decimal `serde-float`), matching
+/// the `realizedGain` contract — the sync sends a number, not a string.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedEntryInput {
+    /// Underlying symbol (OPT: prefix already stripped by the sync).
+    pub underlying: String,
+    /// Local currency of the realized amount (single-currency per underlying).
+    pub currency: String,
+    /// Realized P&L in the underlying's local currency.
+    pub realized_local: rust_decimal::Decimal,
+}
+
 /// A single snapshot from CSV import (one date's worth of holdings)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,6 +203,10 @@ pub struct HoldingsSnapshotInput {
     pub positions: Vec<HoldingsPositionInput>,
     /// Cash balances by currency (e.g., {"USD": "10000", "EUR": "5000"})
     pub cash_balances: HashMap<String, String>,
+    /// Per-underlying realized P&L from the broker ledger (ibkr-sync). Old
+    /// payloads without this field deserialize to an empty Vec.
+    #[serde(default)]
+    pub realized: Vec<RealizedEntryInput>,
 }
 
 /// Result of importing holdings CSV
@@ -201,6 +219,49 @@ pub struct ImportHoldingsCsvResult {
     pub snapshots_failed: usize,
     /// Error messages for failed snapshots (date -> error)
     pub errors: Vec<String>,
+}
+
+/// Query for the realized-P&L read endpoint.
+#[derive(Deserialize)]
+pub struct RealizedPnlQuery {
+    #[serde(rename = "accountId")]
+    pub account_id: Option<String>,
+}
+
+/// Local + base amounts for one realized entry.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedAmounts {
+    pub local: rust_decimal::Decimal,
+    pub base: rust_decimal::Decimal,
+}
+
+/// One per-underlying row in the realized-P&L response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedPnlEntry {
+    pub underlying: String,
+    pub currency: String,
+    pub realized: RealizedAmounts,
+}
+
+/// Base-currency total across all entries.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedTotal {
+    pub base: rust_decimal::Decimal,
+}
+
+/// Response of `GET /realized-pnl`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedPnlResponse {
+    /// The base currency the `base`/`total` amounts are expressed in (a user
+    /// setting; not assumed to be USD). The frontend uses this to label the
+    /// base-currency total instead of hard-coding a symbol.
+    pub base_currency: String,
+    pub entries: Vec<RealizedPnlEntry>,
+    pub total: RealizedTotal,
 }
 
 /// Request body for importing holdings CSV
@@ -240,7 +301,7 @@ pub struct CheckHoldingsImportResult {
 
 #[cfg(test)]
 mod tests {
-    use super::HoldingsPositionInput;
+    use super::{HoldingsPositionInput, HoldingsSnapshotInput, RealizedEntryInput};
     use rust_decimal::Decimal;
     use std::str::FromStr;
 
@@ -266,5 +327,47 @@ mod tests {
         }"#;
         let input: HoldingsPositionInput = serde_json::from_str(json).unwrap();
         assert_eq!(input.realized_gain, Decimal::from_str("250.5").unwrap());
+    }
+
+    #[test]
+    fn snapshot_input_defaults_realized_to_empty() {
+        // Old ibkr-sync payload without the realized field.
+        let json = r#"{
+            "date": "2026-06-04",
+            "positions": [],
+            "cashBalances": {}
+        }"#;
+        let input: HoldingsSnapshotInput = serde_json::from_str(json).unwrap();
+        assert!(input.realized.is_empty());
+    }
+
+    #[test]
+    fn realized_entry_parses_serde_float_local() {
+        let json = r#"{
+            "underlying": "2015",
+            "currency": "HKD",
+            "realizedLocal": -57350.5
+        }"#;
+        let entry: RealizedEntryInput = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.underlying, "2015");
+        assert_eq!(entry.currency, "HKD");
+        assert_eq!(entry.realized_local, Decimal::from_str("-57350.5").unwrap());
+    }
+
+    #[test]
+    fn snapshot_input_parses_realized_list() {
+        let json = r#"{
+            "date": "2026-06-04",
+            "positions": [],
+            "cashBalances": {},
+            "realized": [
+                { "underlying": "AAPL", "currency": "USD", "realizedLocal": 250.5 },
+                { "underlying": "2015", "currency": "HKD", "realizedLocal": -57350 }
+            ]
+        }"#;
+        let input: HoldingsSnapshotInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.realized.len(), 2);
+        assert_eq!(input.realized[0].underlying, "AAPL");
+        assert_eq!(input.realized[1].currency, "HKD");
     }
 }
