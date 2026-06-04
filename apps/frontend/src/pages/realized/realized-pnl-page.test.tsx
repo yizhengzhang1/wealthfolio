@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RealizedPnl } from "@/lib/types";
 
@@ -81,5 +81,16 @@ describe("RealizedPnlPage", () => {
     const rows = await screen.findAllByTestId("realized-row");
     const order = rows.map((r) => r.getAttribute("data-underlying"));
     expect(order).toEqual(["TSLA", "2015", "AAPL"]);
+  });
+});
+
+import { useNavigation } from "@/pages/layouts/navigation/app-navigation";
+
+describe("realized nav registration", () => {
+  it("exposes a Realized P&L nav item pointing at /realized", () => {
+    const { result } = renderHook(() => useNavigation());
+    const item = result.current.primary.find((link) => link.href === "/realized");
+    expect(item).toBeDefined();
+    expect(item?.title).toBe("Realized P&L");
   });
 });

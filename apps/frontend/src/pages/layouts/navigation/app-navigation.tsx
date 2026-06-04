@@ -40,6 +40,13 @@ const staticNavigation: NavigationProps = {
       label: "View Holdings",
     },
     {
+      icon: <Icons.TrendingUp className="size-6" />,
+      title: "Realized P&L",
+      href: "/realized",
+      keywords: ["realized", "pnl", "gains", "losses", "closed", "sold"],
+      label: "View Realized P&L",
+    },
+    {
       icon: <Icons.Activity className="size-6" />,
       title: "Activities",
       href: "/activities",

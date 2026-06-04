@@ -15,6 +15,7 @@ import AssetsPage from "@/pages/asset/assets-page";
 import PortfolioPage from "@/pages/dashboard/portfolio-page";
 import HoldingsPage from "@/pages/holdings/holdings-page";
 import IncomePage from "@/pages/income/income-page";
+import RealizedPnlPage from "@/pages/realized/realized-pnl-page";
 import PortfolioInsightsPage from "@/pages/insights/portfolio-insights";
 import NotFoundPage from "@/pages/not-found";
 import PerformancePage from "@/pages/performance/performance-page";
@@ -98,6 +99,7 @@ export function AppRoutes() {
           <Route path="import" element={<ActivityImportPage />} />
           <Route path="accounts/:id" element={<AccountPage />} />
           <Route path="income" element={<IncomePage />} />
+          <Route path="realized" element={<RealizedPnlPage />} />
           <Route path="performance" element={<PerformancePage />} />
           <Route path="insights" element={<PortfolioInsightsPage />} />
           <Route path="health" element={<HealthPage />} />
