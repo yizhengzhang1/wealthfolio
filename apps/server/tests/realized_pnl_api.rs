@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::OnceLock, time::Duration};
 
 use axum::{
     body::{to_bytes, Body},
@@ -6,8 +6,19 @@ use axum::{
 };
 use serde_json::Value;
 use tempfile::tempdir;
+use tokio::sync::{Mutex, MutexGuard};
 use tower::ServiceExt;
 use wealthfolio_server::{api::app_router, build_state, config::Config};
+
+/// `build_state` mutates process-global env vars (`DATABASE_URL`, `WF_SECRET_FILE`).
+/// Both tests in this binary run in parallel by default, so a concurrent
+/// `build_state` would clobber `DATABASE_URL` mid-init and trip SQLite's
+/// "database is locked". Serialize the build + run with one process-wide lock.
+static BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+async fn build_state_guard() -> MutexGuard<'static, ()> {
+    BUILD_LOCK.get_or_init(|| Mutex::new(())).lock().await
+}
 
 fn test_config(db_path: String, addons_root: String) -> Config {
     Config {
@@ -25,6 +36,7 @@ fn test_config(db_path: String, addons_root: String) -> Config {
 
 #[tokio::test]
 async fn realized_pnl_roundtrips_import_to_read() {
+    let _guard = build_state_guard().await;
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir
         .path()
@@ -161,6 +173,7 @@ async fn realized_pnl_roundtrips_import_to_read() {
 ///   - total.base = sum of convertible entries only (HKD contributes 0)
 #[tokio::test]
 async fn realized_pnl_degrades_gracefully_on_missing_fx_rate() {
+    let _guard = build_state_guard().await;
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir
         .path()
