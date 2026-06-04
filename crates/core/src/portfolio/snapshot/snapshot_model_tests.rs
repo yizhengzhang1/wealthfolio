@@ -430,4 +430,28 @@ mod tests {
         let pos: Position = serde_json::from_str(json).unwrap();
         assert_eq!(pos.realized_gain, dec!(250.5));
     }
+
+    #[test]
+    fn manual_holding_input_has_realized_gain_field() {
+        use crate::portfolio::snapshot::ManualHoldingInput;
+        use rust_decimal_macros::dec;
+
+        let input = ManualHoldingInput {
+            asset_id: Some("AAPL".to_string()),
+            symbol: "AAPL".to_string(),
+            exchange_mic: None,
+            quantity: dec!(10),
+            currency: "USD".to_string(),
+            average_cost: dec!(100),
+            name: None,
+            data_source: None,
+            asset_kind: None,
+            quote_ccy: None,
+            instrument_type: None,
+            provider_id: None,
+            provider_symbol: None,
+            realized_gain: dec!(250.5),
+        };
+        assert_eq!(input.realized_gain, dec!(250.5));
+    }
 }

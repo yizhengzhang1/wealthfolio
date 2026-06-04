@@ -38,6 +38,9 @@ pub struct ManualHoldingInput {
     pub provider_id: Option<String>,
     /// Provider-native symbol/code selected by search/import.
     pub provider_symbol: Option<String>,
+    /// Cumulative realized P&L in the asset's currency from the broker/snapshot
+    /// feed. Defaults to zero for manual entry and CSV import.
+    pub realized_gain: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -208,7 +211,7 @@ impl ManualSnapshotService {
                 // OptionSpec, 1 otherwise). Previously hardcoded to 1, which
                 // made option holdings under-value by 100x.
                 contract_multiplier: asset.contract_multiplier(),
-                realized_gain: Decimal::ZERO,
+                realized_gain: holding.realized_gain,
             };
             positions.insert(asset.id, position);
         }
