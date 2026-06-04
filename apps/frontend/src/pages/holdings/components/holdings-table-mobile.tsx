@@ -55,6 +55,8 @@ function MetricStrip({
             {showHeader && <span className="text-muted-foreground text-[10px]">{m.label}</span>}
             {v.top == null ? (
               <span className="text-xs text-transparent">-</span>
+            ) : m.isPercent ? (
+              <span className="text-sm tabular-nums">{(v.top * 100).toFixed(2)}%</span>
             ) : (
               <AmountDisplay value={v.top} currency={currency} colorFormat={m.colorFormat} isHidden={isHidden} className="text-sm" />
             )}

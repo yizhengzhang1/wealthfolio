@@ -56,6 +56,11 @@ describe("HOLDING_METRIC_COLUMNS shape", () => {
     expect(visible).toEqual(["marketValue", "priceAvgCost", "day"]);
   });
 
+  it("renders only weight as a percent", () => {
+    const pct = HOLDING_METRIC_COLUMNS.filter((c) => c.isPercent).map((c) => c.id);
+    expect(pct).toEqual(["weight"]);
+  });
+
   it("colors only the P&L columns", () => {
     const colored = HOLDING_METRIC_COLUMNS.filter((c) => c.colorFormat).map((c) => c.id);
     expect(colored).toEqual(["day", "unrealized", "realized", "holding"]);
