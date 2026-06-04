@@ -97,7 +97,10 @@ everything on the host, while still leveraging the IBKR MCP binding
 ## Knobs
 
 The routine prompt (`scripts/routine-prompt.txt`) bakes in:
-- IBKR trades lookback: **DAYS_7** (overlaps prior runs; dedup handles repeats)
+- IBKR trades lookback: **DAYS_7** — fetched via `get_account_trades` and
+  folded into the realized-P&L ledger (`state/positions-state.json` →
+  `realized.cumulativeRealizedByAsset`). Overlapping prior runs are deduped by
+  `trade_id`, so the window can safely re-include trades.
 - Wealthfolio account name: **IBKR**
 - providerAccountId: **IBKR-MAIN**
 - Wealthfolio URL: **http://localhost:8088**
@@ -114,6 +117,42 @@ Env knobs:
 
 For DAYS_30 / longer backfill, run a one-off manually with a separate prompt
 or directly invoke `sync.ts` after a manual MCP dump (see CONTEXT.md).
+
+## Realized P&L ledger + one-time backfill
+
+Realized P&L is **accumulated forward** from the first run that fetched
+trades. The ledger lives in `state/positions-state.json`:
+
+    "realized": {
+      "seenTradeIds": ["tid-007", ...],
+      "cumulativeRealizedByAsset": { "ACME": 500, "OPT:ACME": 200 }
+    }
+
+Each hourly run fetches the last 7 days of trades and adds any unseen
+`trade_id`'s `realized_pnl` to its asset key. Dedup is by `trade_id`, so
+overlapping windows never double-count. STK realized is keyed by the bare
+symbol and stamped onto the matching snapshot row as `realizedGain`; OPT
+realized accrues under `OPT:<symbol>` but is NOT yet stamped onto a specific
+OCC option row (trades carry only the short symbol).
+
+Because accumulation starts at the first tracked run, history before then is
+missing. To seed it once, do a wide-window backfill BEFORE relying on the
+number:
+
+1. Stop the cron (or just run off-hours).
+2. In a Claude Code session with the IBKR MCP binding, call
+   `get_account_trades` with `period: "YEAR_TO_DATE"` (the widest single
+   window IBKR exposes besides per-quarter `LAST_QUARTER` /
+   `TWO_QUARTERS_AGO` / … — there is NO 365-day option; for >1y use the
+   per-quarter periods and merge). Write the response under `"trades"` in
+   `/tmp/ibkr-raw.json` alongside the usual positions/balances/summary.
+3. Run `npx tsx src/sync.ts --from=/tmp/ibkr-raw.json --dry-run` and confirm
+   the `[ibkr-sync] realized ledger:` line shows the expected assets/amounts.
+4. Re-run without `--dry-run` to persist the seeded ledger, then resume cron.
+   Subsequent DAYS_7 runs only add newly-seen trades.
+
+CAUTION: IBKR's `realized_pnl` semantics (lifetime vs YTD reset) must be
+validated against real data first — see the design spec's top open item.
 
 ## See also
 

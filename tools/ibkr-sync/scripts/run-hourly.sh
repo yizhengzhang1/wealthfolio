@@ -53,7 +53,7 @@ LOG="$LOG_DIR/sync-$(date -u +%Y%m%d).log"
 # the IBKR read tools, plus the file/process primitives the prompt needs.
 claude -p "$(sed "s|{REPO}|$REPO|g" "$PROMPT_FILE")" \
   --output-format text \
-  --allowedTools "Bash,Read,Write,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_positions,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_balances,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_summary,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_orders" \
+  --allowedTools "Bash,Read,Write,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_positions,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_balances,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_summary,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_orders,mcp__claude_ai_Interactive_Brokers_IBKR__get_account_trades" \
   --permission-mode acceptEdits \
   >> "$LOG" 2>&1
 
