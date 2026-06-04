@@ -109,8 +109,8 @@ export function stampRealizedGain(
   ledger: RealizedLedger,
 ): HoldingsPositionInput[] {
   return rows.map((row) => {
-    const realized = ledger.cumulativeRealizedByAsset[positionAssetKey(row)];
-    return realized === undefined ? row : { ...row, realizedGain: realized };
+    const entry = ledger.cumulativeRealizedByAsset[positionAssetKey(row)];
+    return entry === undefined ? row : { ...row, realizedGain: entry.amount };
   });
 }
 

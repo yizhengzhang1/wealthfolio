@@ -48,7 +48,7 @@ export interface ClosingPosition extends LivePosition {
  *  snapshot row uses (stock symbol, or `OPT:<symbol>` for options). */
 export interface RealizedLedger {
   seenTradeIds: string[];
-  cumulativeRealizedByAsset: Record<string, number>;
+  cumulativeRealizedByAsset: Record<string, { amount: number; currency: string }>;
 }
 
 export interface SyncState {
@@ -78,13 +78,16 @@ export function applyTradesToLedger(
   trades: IbkrTrade[],
 ): RealizedLedger {
   const seen = new Set(ledger.seenTradeIds);
-  const byAsset: Record<string, number> = { ...ledger.cumulativeRealizedByAsset };
+  const byAsset: Record<string, { amount: number; currency: string }> = {
+    ...ledger.cumulativeRealizedByAsset,
+  };
   for (const t of trades) {
     if (seen.has(t.trade_id)) continue;
     seen.add(t.trade_id);
     const key = tradeAssetKey(t);
     if (key === null) continue;
-    byAsset[key] = (byAsset[key] ?? 0) + t.realized_pnl;
+    const prev = byAsset[key];
+    byAsset[key] = { amount: (prev?.amount ?? 0) + t.realized_pnl, currency: t.currency };
   }
   return { seenTradeIds: [...seen], cumulativeRealizedByAsset: byAsset };
 }

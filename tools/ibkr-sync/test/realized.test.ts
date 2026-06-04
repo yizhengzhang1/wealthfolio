@@ -35,7 +35,10 @@ describe('applyTradesToLedger', () => {
       trade({ trade_id: 'b', symbol: 'ACME', realized_pnl: 250 }),
       trade({ trade_id: 'c', symbol: '9999', currency: 'HKD', realized_pnl: -100 }),
     ]);
-    expect(next.cumulativeRealizedByAsset).toEqual({ ACME: 750, '9999': -100 });
+    expect(next.cumulativeRealizedByAsset).toEqual({
+      ACME: { amount: 750, currency: 'USD' },
+      '9999': { amount: -100, currency: 'HKD' },
+    });
     expect(next.seenTradeIds.sort()).toEqual(['a', 'b', 'c']);
   });
 
@@ -49,7 +52,7 @@ describe('applyTradesToLedger', () => {
       ...batch,
       trade({ trade_id: 'c', symbol: 'ACME', realized_pnl: 100 }),
     ]);
-    expect(second.cumulativeRealizedByAsset).toEqual({ ACME: 850 });
+    expect(second.cumulativeRealizedByAsset).toEqual({ ACME: { amount: 850, currency: 'USD' } });
     expect(second.seenTradeIds.sort()).toEqual(['a', 'b', 'c']);
   });
 
@@ -96,8 +99,8 @@ describe('applyTradesToLedger against the trades fixture', () => {
   it('accumulates the ACME STK close (500) and the ACME OPT close (200)', () => {
     const trades = parseTradesForRealized(tradesFixture);
     const ledger = applyTradesToLedger(emptyLedger(), trades);
-    expect(ledger.cumulativeRealizedByAsset['ACME']).toBe(500);     // STK close
-    expect(ledger.cumulativeRealizedByAsset['OPT:ACME']).toBe(200); // OPT close
+    expect(ledger.cumulativeRealizedByAsset['ACME']).toEqual({ amount: 500, currency: 'USD' });
+    expect(ledger.cumulativeRealizedByAsset['OPT:ACME']).toEqual({ amount: 200, currency: 'USD' });
   });
 });
 
@@ -122,7 +125,7 @@ describe('loadState ledger migration', () => {
     const dir = await mkdtemp(join(tmpdir(), 'ibkr-realized-'));
     const path = join(dir, 'positions-state.json');
     const state = emptyState();
-    state.realized = { seenTradeIds: ['a'], cumulativeRealizedByAsset: { ACME: 500 } };
+    state.realized = { seenTradeIds: ['a'], cumulativeRealizedByAsset: { ACME: { amount: 500, currency: 'USD' } } };
     await saveState(path, state);
     expect(await loadState(path)).toEqual(state);
   });
@@ -132,7 +135,13 @@ import { stampRealizedGain } from '../src/sync.js';
 
 describe('stampRealizedGain', () => {
   it('stamps realizedGain on rows whose asset key is in the ledger', () => {
-    const ledger = { seenTradeIds: ['x'], cumulativeRealizedByAsset: { ACME: 500, ZZZ: -100 } };
+    const ledger = {
+      seenTradeIds: ['x'],
+      cumulativeRealizedByAsset: {
+        ACME: { amount: 500, currency: 'USD' },
+        ZZZ: { amount: -100, currency: 'USD' },
+      },
+    };
     const rows: HoldingsPositionInput[] = [
       { symbol: 'ACME', quantity: '10', currency: 'USD', instrumentType: 'EQUITY' },
       { symbol: 'NOPE', quantity: '5', currency: 'USD', instrumentType: 'EQUITY' },
@@ -143,7 +152,7 @@ describe('stampRealizedGain', () => {
   });
 
   it('does not mutate the input rows', () => {
-    const ledger = { seenTradeIds: [], cumulativeRealizedByAsset: { ACME: 500 } };
+    const ledger = { seenTradeIds: [], cumulativeRealizedByAsset: { ACME: { amount: 500, currency: 'USD' } } };
     const rows: HoldingsPositionInput[] = [
       { symbol: 'ACME', quantity: '10', currency: 'USD', instrumentType: 'EQUITY' },
     ];
