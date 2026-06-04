@@ -14,6 +14,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use wealthfolio_core::{
+    fx::FxServiceTrait,
+    settings::SettingsServiceTrait,
     accounts::{account_supports_purpose, AccountPurpose, TrackingMode},
     allocation::{AllocationHoldings, PortfolioAllocations},
     holdings::Holding,
@@ -486,6 +488,124 @@ pub async fn get_income_summary(
         .income_service()
         .get_income_summary(Some(&account_ids))
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedAmountsDto {
+    pub local: rust_decimal::Decimal,
+    pub base: rust_decimal::Decimal,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedPnlEntryDto {
+    pub underlying: String,
+    pub currency: String,
+    pub realized: RealizedAmountsDto,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedTotalDto {
+    pub base: rust_decimal::Decimal,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealizedPnlResponseDto {
+    pub base_currency: String,
+    pub entries: Vec<RealizedPnlEntryDto>,
+    pub total: RealizedTotalDto,
+}
+
+#[derive(serde::Deserialize)]
+struct RealizedEntryRow {
+    underlying: String,
+    currency: String,
+    #[serde(rename = "realizedLocal")]
+    realized_local: rust_decimal::Decimal,
+}
+
+#[tauri::command]
+pub async fn get_realized_pnl(
+    state: State<'_, Arc<ServiceContext>>,
+    filter: Option<AccountScopeInput>,
+) -> Result<RealizedPnlResponseDto, String> {
+    debug!("Fetching realized P&L...");
+    let base = state.get_base_currency();
+
+    let account_ids: Vec<String> = if let Some(input) = filter {
+        let af = input.into_account_filter()?;
+        let resolved = resolve_scope(&af, &state).await?;
+        holdings_account_ids(&state, &resolved.account_ids)?
+    } else {
+        state
+            .account_service()
+            .get_active_accounts()
+            .map_err(|e| format!("Failed to fetch active accounts: {}", e))?
+            .into_iter()
+            .filter(|account| {
+                account_supports_purpose(&account.account_type, AccountPurpose::Holdings)
+            })
+            .map(|account| account.id)
+            .collect()
+    };
+
+    let mut acc: std::collections::HashMap<String, (String, Decimal, bool, Decimal)> =
+        std::collections::HashMap::new();
+
+    for account_id in &account_ids {
+        let key = format!("realized_pnl:{}", account_id);
+        let blob = state
+            .settings_service()
+            .get_setting_value(&key)
+            .map_err(|e| e.to_string())?;
+        let Some(blob) = blob else { continue };
+        let rows: Vec<RealizedEntryRow> =
+            serde_json::from_str(&blob).map_err(|e| e.to_string())?;
+        for row in rows {
+            let base_amount = state
+                .fx_service()
+                .convert_currency(row.realized_local, &row.currency, &base)
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "[realized-pnl] no FX rate {}->{}  for {}; base set to 0: {}",
+                        row.currency, base, row.underlying, e
+                    );
+                    Decimal::ZERO
+                });
+            let slot = acc.entry(row.underlying.clone()).or_insert((
+                row.currency.clone(),
+                Decimal::ZERO,
+                true,
+                Decimal::ZERO,
+            ));
+            if slot.2 && slot.0 == row.currency {
+                slot.1 += row.realized_local;
+            } else {
+                slot.2 = false;
+            }
+            slot.3 += base_amount;
+        }
+    }
+
+    let mut entries: Vec<RealizedPnlEntryDto> = acc
+        .into_iter()
+        .map(|(underlying, (currency, local, _c, base_sum))| RealizedPnlEntryDto {
+            underlying,
+            currency,
+            realized: RealizedAmountsDto { local, base: base_sum },
+        })
+        .collect();
+    entries.sort_by(|a, b| b.realized.base.abs().cmp(&a.realized.base.abs()));
+    let total_base: Decimal = entries.iter().map(|e| e.realized.base).sum();
+
+    Ok(RealizedPnlResponseDto {
+        base_currency: base,
+        entries,
+        total: RealizedTotalDto { base: total_base },
+    })
 }
 
 #[tauri::command]
