@@ -92,6 +92,46 @@ export function applyTradesToLedger(
   return { seenTradeIds: [...seen], cumulativeRealizedByAsset: byAsset };
 }
 
+export interface RealizedUnderlying {
+  underlying: string;
+  currency: string;
+  realizedLocal: number;
+}
+
+/**
+ * Collapse the per-asset ledger into per-underlying totals.
+ * OPT:<symbol> and <symbol> entries are merged into one underlying row.
+ * Each underlying is expected to be single-currency; if not, separate entries
+ * are kept and a warning is logged.
+ */
+export function realizedByUnderlying(ledger: RealizedLedger): RealizedUnderlying[] {
+  const map = new Map<string, Map<string, number>>();
+  for (const [key, entry] of Object.entries(ledger.cumulativeRealizedByAsset)) {
+    const underlying = key.startsWith('OPT:') ? key.slice(4) : key;
+    let byCurrencyMap = map.get(underlying);
+    if (!byCurrencyMap) {
+      byCurrencyMap = new Map();
+      map.set(underlying, byCurrencyMap);
+    }
+    byCurrencyMap.set(entry.currency, (byCurrencyMap.get(entry.currency) ?? 0) + entry.amount);
+  }
+  const result: RealizedUnderlying[] = [];
+  for (const [underlying, byCurrency] of map.entries()) {
+    if (byCurrency.size > 1) {
+      console.warn(
+        `[ibkr-sync] realized: underlying ${underlying} has entries in multiple currencies (${[...byCurrency.keys()].join(', ')}); keeping separate`,
+      );
+      for (const [currency, amount] of byCurrency.entries()) {
+        result.push({ underlying, currency, realizedLocal: amount });
+      }
+    } else {
+      const [[currency, amount]] = [...byCurrency.entries()];
+      result.push({ underlying, currency, realizedLocal: amount });
+    }
+  }
+  return result;
+}
+
 export async function loadState(path: string): Promise<SyncState> {
   try {
     const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;

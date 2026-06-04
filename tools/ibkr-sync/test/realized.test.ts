@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyTradesToLedger, emptyLedger, loadState, saveState, emptyState } from '../src/state.js';
+import { applyTradesToLedger, emptyLedger, loadState, saveState, emptyState, realizedByUnderlying } from '../src/state.js';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -156,6 +156,60 @@ describe('loadState ledger migration', () => {
     };
     await saveState(path, state);
     expect(await loadState(path)).toEqual(state);
+  });
+});
+
+describe('realizedByUnderlying', () => {
+  function ledger(entries: Record<string, { amount: number; currency: string }>) {
+    return { seenTradeIds: [], cumulativeRealizedByAsset: entries };
+  }
+
+  it('strips OPT: prefix and returns underlying with amount and currency', () => {
+    const result = realizedByUnderlying(ledger({ 'OPT:SPX': { amount: 1000, currency: 'USD' } }));
+    expect(result).toEqual([{ underlying: 'SPX', currency: 'USD', realizedLocal: 1000 }]);
+  });
+
+  it('combines stock and option realized for the same underlying', () => {
+    const result = realizedByUnderlying(ledger({
+      'ACME': { amount: 500, currency: 'USD' },
+      'OPT:ACME': { amount: 200, currency: 'USD' },
+    }));
+    expect(result).toEqual([{ underlying: 'ACME', currency: 'USD', realizedLocal: 700 }]);
+  });
+
+  it('handles multiple underlyings', () => {
+    const result = realizedByUnderlying(ledger({
+      'ACME': { amount: 500, currency: 'USD' },
+      'OPT:ACME': { amount: 200, currency: 'USD' },
+      '9999': { amount: -100, currency: 'HKD' },
+    }));
+    const acme = result.find((r) => r.underlying === 'ACME');
+    const hk = result.find((r) => r.underlying === '9999');
+    expect(acme).toEqual({ underlying: 'ACME', currency: 'USD', realizedLocal: 700 });
+    expect(hk).toEqual({ underlying: '9999', currency: 'HKD', realizedLocal: -100 });
+    expect(result.length).toBe(2);
+  });
+
+  it('OPT-only underlying (no matching STK key) still groups correctly', () => {
+    const result = realizedByUnderlying(ledger({ 'OPT:SPX': { amount: -300, currency: 'USD' } }));
+    expect(result).toEqual([{ underlying: 'SPX', currency: 'USD', realizedLocal: -300 }]);
+  });
+
+  it('returns empty array for an empty ledger', () => {
+    expect(realizedByUnderlying(ledger({}))).toEqual([]);
+  });
+
+  it('logs a warning and keeps separate entries for a mixed-currency underlying', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = realizedByUnderlying(ledger({
+      'ACME': { amount: 500, currency: 'USD' },
+      'OPT:ACME': { amount: 200, currency: 'HKD' },
+    }));
+    expect(result.length).toBe(2);
+    expect(result.some((r) => r.currency === 'USD')).toBe(true);
+    expect(result.some((r) => r.currency === 'HKD')).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ACME'));
+    warnSpy.mockRestore();
   });
 });
 
