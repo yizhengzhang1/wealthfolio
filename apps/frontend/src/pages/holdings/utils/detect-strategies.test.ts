@@ -556,4 +556,39 @@ describe("greedy ordering & ambiguity (integration)", () => {
   });
 });
 
+describe("buildStrategyRow base-gain aggregation", () => {
+  it("sums unrealizedGainBase and realizedGainBase across legs", () => {
+    const legA = {
+      id: "a",
+      accountId: "acc-1",
+      instrument: { id: "a", symbol: "ASTS260612C00100000", name: "a", currency: "USD", quoteMode: "LIVE" },
+      quantity: 1,
+      contractMultiplier: 100,
+      localCurrency: "USD",
+      baseCurrency: "USD",
+      fxRate: 1,
+      marketValue: { local: 250, base: 250 },
+      costBasis: { local: 300, base: 300 },
+      unrealizedGain: { local: -50, base: -50 },
+      realizedGain: { local: 10, base: 10 },
+      totalGain: { local: -40, base: -40 },
+      dayChange: { local: 0, base: 0 },
+      prevCloseValue: { local: 0, base: 0 },
+      weight: 0,
+    } as unknown as Holding;
+    const legB = {
+      ...legA,
+      id: "b",
+      instrument: { id: "b", symbol: "ASTS260612C00110000", name: "b", currency: "USD", quoteMode: "LIVE" },
+      quantity: -1,
+      unrealizedGain: { local: 30, base: 30 },
+      realizedGain: { local: 5, base: 5 },
+    } as unknown as Holding;
+
+    const row = buildStrategyRow("ASTS", "vertical", "Bull Call Spread", "auto", [legA, legB]);
+    expect(row.unrealizedGainBase).toBeCloseTo(-50 + 30, 2);
+    expect(row.realizedGainBase).toBeCloseTo(10 + 5, 2);
+  });
+});
+
 export { makeHolding, call, put, EXP_A, EXP_B, NO_OVERRIDES };

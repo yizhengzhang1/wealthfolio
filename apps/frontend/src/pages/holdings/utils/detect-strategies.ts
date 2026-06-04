@@ -88,6 +88,8 @@ export function buildStrategyRow(
   let marketValueBase = 0;
   let costBasisBase = 0;
   let totalGainBase = 0;
+  let unrealizedGainBase = 0;
+  let realizedGainBase = 0;
   let dayChangeBase = 0;
   let prevCloseBase = 0;
   let weight = 0;
@@ -95,6 +97,8 @@ export function buildStrategyRow(
     marketValueBase += h.marketValue?.base ?? 0;
     costBasisBase += h.costBasis?.base ?? 0;
     totalGainBase += h.totalGain?.base ?? 0;
+    unrealizedGainBase += h.unrealizedGain?.base ?? 0;
+    realizedGainBase += h.realizedGain?.base ?? 0;
     dayChangeBase += h.dayChange?.base ?? 0;
     prevCloseBase += h.prevCloseValue?.base ?? 0;
     weight += h.weight ?? 0;
@@ -114,6 +118,8 @@ export function buildStrategyRow(
     costBasisBase,
     totalGainBase,
     totalGainPct: costBasisBase !== 0 ? totalGainBase / Math.abs(costBasisBase) : null,
+    unrealizedGainBase,
+    realizedGainBase,
     dayChangeBase,
     dayChangePct: prevCloseBase !== 0 ? dayChangeBase / Math.abs(prevCloseBase) : null,
     weight,

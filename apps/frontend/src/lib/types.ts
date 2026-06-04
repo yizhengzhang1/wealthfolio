@@ -2406,6 +2406,8 @@ export interface StrategyGroupRow {
   costBasisBase: number;
   totalGainBase: number;
   totalGainPct: number | null;
+  unrealizedGainBase: number;
+  realizedGainBase: number;
   dayChangeBase: number;
   dayChangePct: number | null;
   weight: number;
