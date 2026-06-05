@@ -13,6 +13,26 @@ function env(name: string, fallback?: string): string {
   return v;
 }
 
+export interface SnapAccount {
+  id: string;
+  name: string;
+  institution_name: string;
+}
+
+/**
+ * Pick which SnapTrade account to sync. An explicit account id wins; otherwise
+ * match by institution-name substring. Returns null when nothing matches — the
+ * caller MUST fail rather than fall back to an arbitrary account, so a typo or a
+ * second connection can't silently sync the wrong brokerage.
+ */
+export function selectAccount(
+  accounts: SnapAccount[], institution: string, explicitId?: string,
+): SnapAccount | null {
+  if (explicitId) return accounts.find((a) => a.id === explicitId) ?? null;
+  const want = institution.toLowerCase();
+  return accounts.find((a) => a.institution_name?.toLowerCase().includes(want)) ?? null;
+}
+
 export async function run(): Promise<number> {
   const dryRun = process.argv.includes("--dry-run");
   const clientId = env("SNAPTRADE_CLIENT_ID");
@@ -25,10 +45,17 @@ export async function run(): Promise<number> {
   const statePath = env("SNAPTRADE_STATE", "state/positions-state.json");
   const graceDays = Number(env("SNAPTRADE_GRACE_DAYS", "1"));
 
+  const explicitId = process.env.SNAPTRADE_ACCOUNT_ID;
   const st = makeClient(clientId, consumerKey);
   const accounts = await listAccounts(st, userId, userSecret);
-  const acct = accounts.find(a => a.institution_name?.toLowerCase().includes(wantInstitution.toLowerCase())) ?? accounts[0];
-  if (!acct) { console.error("[snaptrade-sync] no SnapTrade account found"); return 1; }
+  const acct = selectAccount(accounts, wantInstitution, explicitId);
+  if (!acct) {
+    const found = accounts.map((a) => `${a.institution_name} (${a.id})`).join(", ") || "none";
+    console.error(
+      `[snaptrade-sync] no SnapTrade account ${explicitId ? `with id ${explicitId}` : `matching institution "${wantInstitution}"`}; found: ${found}`,
+    );
+    return 1;
+  }
   const providerAccountId = `SNAPTRADE-${acct.id}`;
 
   const holdings = await fetchHoldings(st, userId, userSecret, acct.id);
