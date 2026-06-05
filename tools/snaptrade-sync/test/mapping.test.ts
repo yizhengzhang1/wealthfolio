@@ -4,7 +4,7 @@ import { parseHoldings } from "../src/snaptrade.js";
 import {
   optionPositionToHoldingsPosition, buildOptionAssetSpec,
   equityPositionToHoldingsPosition, balancesToCashBalances, optionMultiplier,
-  snaptradePositionToObserved,
+  snaptradePositionToObserved, reinjectionToHoldingsPosition,
 } from "../src/mapping.js";
 
 const h = parseHoldings(JSON.parse(readFileSync(new URL("./fixtures/holdings.json", import.meta.url), "utf8")));
@@ -65,8 +65,25 @@ describe("snaptradePositionToObserved", () => {
     });
   });
   it("equity -> EQUITY observed (occSymbol null)", () => {
-    expect(snaptradePositionToObserved(eq, eq.symbol.symbol)).toMatchObject({
+    expect(snaptradePositionToObserved(eq, eq.symbol.symbol.symbol)).toMatchObject({
       key: "TSLA", instrumentType: "EQUITY", occSymbol: null, expiration: null, quantity: "100",
     });
+  });
+});
+
+describe("reinjectionToHoldingsPosition", () => {
+  const base = {
+    key: "X", contractDescription: "X", occSymbol: "MSFT  270115C00500000",
+    instrumentType: "OPTION" as const, expiration: "2027-01-15",
+    quantity: "1", avgCost: "30.0066", currency: "USD",
+    lastSeenDate: "2026-06-04", closedDate: "2026-06-05",
+  };
+  it("EXPIRED keeps avgCost", () => {
+    expect(reinjectionToHoldingsPosition({ ...base, kind: "EXPIRED" })).toMatchObject({
+      symbol: "MSFT  270115C00500000", quantity: "1", avgCost: "30.0066", instrumentType: "OPTION",
+    });
+  });
+  it("CLOSED zeroes avgCost", () => {
+    expect(reinjectionToHoldingsPosition({ ...base, kind: "CLOSED" }).avgCost).toBe("0");
   });
 });

@@ -19,9 +19,15 @@ export const optionPositionSchema = z.object({
   average_purchase_price: z.number().nullable(),
 }).passthrough();
 
+const equitySymbolInnerSchema = z.object({
+  symbol: z.string(),
+  exchange: z.object({ mic_code: z.string().nullish() }).passthrough().nullish(),
+}).passthrough();
+
 export const equityPositionSchema = z.object({
+  // Live API wraps the inner symbol one more level: position.symbol.symbol = { symbol, exchange }
   symbol: z.object({
-    symbol: z.string(),
+    symbol: equitySymbolInnerSchema,
     exchange: z.object({ mic_code: z.string().nullish() }).passthrough().nullish(),
   }).passthrough(),
   price: z.number().nullable(),

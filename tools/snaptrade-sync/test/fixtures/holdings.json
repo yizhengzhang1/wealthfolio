@@ -1,12 +1,68 @@
 {
   "positions": [
-    { "symbol": { "symbol": "TSLA", "exchange": { "mic_code": "XNAS" } }, "price": 420, "units": 100, "currency": null, "average_purchase_price": 250.1 }
+    {
+      "symbol": {
+        "symbol": {
+          "symbol": "TSLA",
+          "exchange": {
+            "mic_code": "XNAS"
+          }
+        },
+        "exchange": {
+          "mic_code": "XNAS"
+        }
+      },
+      "price": 420,
+      "units": 100,
+      "currency": null,
+      "average_purchase_price": 250.1
+    }
   ],
   "option_positions": [
-    { "symbol": { "option_symbol": { "ticker": "MSFT  270115C00500000", "strike_price": 500, "expiration_date": "2027-01-15", "is_mini_option": false, "option_type": "CALL", "underlying_symbol": { "symbol": "MSFT" } } }, "price": 22.975, "units": 1, "currency": null, "average_purchase_price": 30.0066 },
-    { "symbol": { "option_symbol": { "ticker": "HSAI  260618P00020000", "strike_price": 20, "expiration_date": "2026-06-18", "is_mini_option": false, "option_type": "PUT", "underlying_symbol": { "symbol": "HSAI" } } }, "price": 0.875, "units": -2, "currency": null, "average_purchase_price": 0.99335 }
+    {
+      "symbol": {
+        "option_symbol": {
+          "ticker": "MSFT  270115C00500000",
+          "strike_price": 500,
+          "expiration_date": "2027-01-15",
+          "is_mini_option": false,
+          "option_type": "CALL",
+          "underlying_symbol": {
+            "symbol": "MSFT"
+          }
+        }
+      },
+      "price": 22.975,
+      "units": 1,
+      "currency": null,
+      "average_purchase_price": 30.0066
+    },
+    {
+      "symbol": {
+        "option_symbol": {
+          "ticker": "HSAI  260618P00020000",
+          "strike_price": 20,
+          "expiration_date": "2026-06-18",
+          "is_mini_option": false,
+          "option_type": "PUT",
+          "underlying_symbol": {
+            "symbol": "HSAI"
+          }
+        }
+      },
+      "price": 0.875,
+      "units": -2,
+      "currency": null,
+      "average_purchase_price": 0.99335
+    }
   ],
   "balances": [
-    { "currency": { "code": "USD" }, "cash": 46575.75, "buying_power": 46575.75 }
+    {
+      "currency": {
+        "code": "USD"
+      },
+      "cash": 46575.75,
+      "buying_power": 46575.75
+    }
   ]
 }

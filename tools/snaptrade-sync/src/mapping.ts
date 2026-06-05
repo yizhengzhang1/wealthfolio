@@ -1,5 +1,5 @@
 import type { HoldingsPositionInput, NewAssetInput } from "./wealthfolio.js";
-import type { ObservedPosition } from "./state.js";
+import type { ObservedPosition, ClosingPosition } from "./state.js";
 import type { OptionPosition, EquityPosition, Holdings } from "./snaptrade.js";
 
 const CCY = "USD";
@@ -44,12 +44,12 @@ export function optionPositionToHoldingsPosition(p: OptionPosition, assetId?: st
 
 export function equityPositionToHoldingsPosition(p: EquityPosition): HoldingsPositionInput {
   return {
-    symbol: p.symbol.symbol,
+    symbol: p.symbol.symbol.symbol,
     quantity: String(p.units),
     avgCost: p.average_purchase_price == null ? undefined : String(p.average_purchase_price),
     currency: CCY,
     instrumentType: "EQUITY",
-    exchangeMic: p.symbol.exchange?.mic_code ?? undefined,
+    exchangeMic: p.symbol.symbol.exchange?.mic_code ?? undefined,
   };
 }
 
@@ -57,6 +57,16 @@ export function balancesToCashBalances(balances: Holdings["balances"]): Record<s
   const out: Record<string, string> = {};
   for (const b of balances) out[b.currency.code] = String(b.cash);
   return out;
+}
+
+export function reinjectionToHoldingsPosition(c: ClosingPosition): HoldingsPositionInput {
+  return {
+    symbol: c.occSymbol ?? c.contractDescription,
+    quantity: c.quantity,
+    avgCost: c.kind === "EXPIRED" ? c.avgCost : "0",
+    currency: c.currency,
+    instrumentType: c.instrumentType,
+  };
 }
 
 export function snaptradePositionToObserved(
@@ -80,7 +90,7 @@ export function snaptradePositionToObserved(
   const e = p as EquityPosition;
   return {
     key,
-    contractDescription: e.symbol.symbol,
+    contractDescription: e.symbol.symbol.symbol,
     occSymbol: null,
     instrumentType: "EQUITY",
     expiration: null,
