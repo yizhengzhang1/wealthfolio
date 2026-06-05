@@ -98,4 +98,5 @@ apps/db/
 apps/tauri/db/
 tasks
 **/*.local.md
+**/*.local.sh
 wealthfolio.db
