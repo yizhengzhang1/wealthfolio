@@ -173,11 +173,11 @@ export function DashboardContent() {
         </div>
 
         <div className="grow px-4 pb-[calc(var(--mobile-nav-ui-height)+max(var(--mobile-nav-gap),env(safe-area-inset-bottom)))] pt-12 md:px-6 md:pb-6 md:pt-6 lg:px-10 lg:pb-8 lg:pt-8">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-20">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-12">
             <div className="lg:col-span-2">
               <AccountsSummary dateRange={dateRange} isAllTime={isAllTime} />
             </div>
-            <div className="space-y-6 lg:col-span-1">
+            <div className="space-y-6 lg:col-span-3">
               <TopHoldings
                 holdings={holdings}
                 isLoading={isHoldingsLoading}

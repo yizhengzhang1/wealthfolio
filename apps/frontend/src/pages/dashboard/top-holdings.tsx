@@ -26,7 +26,7 @@ import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 
-const MAX_DISPLAYED_HOLDINGS = 7;
+const MAX_DISPLAYED_HOLDINGS = 10;
 const MAX_STACKED_AVATARS = 5;
 const SHOW_TOTAL_RETURN_KEY = "dashboard-holdings-widget-show-total-return";
 
