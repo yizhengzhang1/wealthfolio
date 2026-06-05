@@ -21,4 +21,10 @@ describe("parseHoldings", () => {
   it("tolerates missing optional arrays", () => {
     expect(parseHoldings({ positions: [] }).option_positions).toEqual([]);
   });
+  it("tolerates null arrays (stock-only / empty account)", () => {
+    const h = parseHoldings({ positions: null, option_positions: null, balances: null });
+    expect(h.positions).toEqual([]);
+    expect(h.option_positions).toEqual([]);
+    expect(h.balances).toEqual([]);
+  });
 });

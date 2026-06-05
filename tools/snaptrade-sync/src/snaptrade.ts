@@ -41,10 +41,16 @@ export const balanceSchema = z.object({
   cash: z.number(),
 }).passthrough();
 
+// SnapTrade models these arrays as nullable: an account with no equities (or no
+// options, or empty) can return `null` rather than omitting the field. `.default([])`
+// only covers `undefined`, so map null|undefined -> [] explicitly.
+const nullableArray = <T extends z.ZodTypeAny>(schema: T) =>
+  z.array(schema).nullish().transform((v) => v ?? []);
+
 export const holdingsSchema = z.object({
-  positions: z.array(equityPositionSchema).default([]),
-  option_positions: z.array(optionPositionSchema).default([]),
-  balances: z.array(balanceSchema).default([]),
+  positions: nullableArray(equityPositionSchema),
+  option_positions: nullableArray(optionPositionSchema),
+  balances: nullableArray(balanceSchema),
 }).passthrough();
 
 export type Holdings = z.infer<typeof holdingsSchema>;
