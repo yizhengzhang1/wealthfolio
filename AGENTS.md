@@ -59,8 +59,8 @@ apps/frontend/
 │   ├── pages/          # Route pages
 │   ├── components/     # Shared components
 │   ├── features/       # Self-contained feature modules
-│   ├── commands/       # Backend call wrappers (Tauri/Web)
-│   ├── adapters/       # Runtime detection (desktop vs web)
+│   ├── adapters/       # Backend call layer: shared/ + tauri/ + web/
+│   │                   # (selected at build time via BUILD_TARGET Vite alias)
 │   └── addons/         # Addon runtime
 
 apps/tauri/src/
@@ -98,8 +98,9 @@ crates/
 
 1. **Frontend route/UI** → `apps/frontend/src/pages/`,
    `apps/frontend/src/routes.tsx`
-2. **Command wrapper** → `apps/frontend/src/commands/<domain>.ts` (follow
-   `RUN_ENV` pattern)
+2. **Adapter** → `apps/frontend/src/adapters/` — shared logic in `shared/`,
+   backend-specific calls in `tauri/` and `web/` (both must export the same
+   surface; enforced by `adapters/adapter-command-parity.test.ts`)
 3. **Tauri command** → `apps/tauri/src/commands/*.rs`, wire in `mod.rs` +
    `lib.rs`
 4. **Web endpoint** → `apps/server/src/api/`, call `crates/core` service
@@ -116,7 +117,7 @@ crates/
 ### Architecture pattern
 
 ```
-Frontend → Adapter (tauri/web) → Command wrapper
+Frontend → Adapter (build-time alias: tauri/ or web/)
                 ↓
         Tauri IPC  |  Axum HTTP
                 ↓

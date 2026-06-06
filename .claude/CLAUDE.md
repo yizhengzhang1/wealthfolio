@@ -1,25 +1,68 @@
 ## Project Overview
 
 Wealthfolio - Desktop investment tracker with local-first data. React + Vite
-frontend, Tauri/Rust backend, SQLite storage.
+frontend, Tauri/Rust backend, SQLite storage. pnpm workspace (TS) + Cargo
+workspace (Rust) in one repo.
 
 Key directories:
 
-- `apps/frontend/` — React app (pages, components, commands, hooks)
-- `apps/tauri/` — Tauri desktop/mobile app (IPC commands)
-- `apps/server/` — Axum HTTP server (web mode)
-- `crates/` — Rust crates (core logic, storage, market-data, connect,
-  device-sync)
-- `packages/` — Shared TS packages (addon-sdk, ui, addon-dev-tools)
-- `addons/` — Distributable addon plugins
+- `apps/frontend/` — React app (pages, features, components, adapters, addons)
+- `apps/tauri/` — Tauri desktop/mobile app (IPC commands in `src/commands/`)
+- `apps/server/` — Axum HTTP server for web mode (handlers in `src/api/`)
+- `crates/` — Rust crates: `core` (business logic/services), `storage-sqlite`
+  (Diesel ORM, repositories, migrations), `market-data`, `connect`,
+  `device-sync` (E2EE sync), `ai`, `spending`
+- `packages/` — Shared TS packages: `@wealthfolio/ui`, `addon-sdk`,
+  `addon-dev-tools`
+- `docs/architecture/` — adapter, AI assistant, and market-data design docs
+
+## Architecture: One Frontend, Two Backends
+
+The same React app ships as a Tauri desktop app and as a web app served by an
+Axum server. Backend selection is at **build time**, not runtime:
+
+```
+Frontend (React) → adapter API (apps/frontend/src/adapters/)
+        BUILD_TARGET=tauri → adapters/tauri/ → Tauri IPC commands (apps/tauri/src/commands/)
+        BUILD_TARGET=web   → adapters/web/   → HTTP → Axum API (apps/server/src/api/)
+                                 ↓ (both)
+                        crates/core services → crates/storage-sqlite (Diesel/SQLite)
+```
+
+- `apps/frontend/vite.config.ts` aliases the adapter import to `adapters/tauri/`
+  or `adapters/web/` based on `BUILD_TARGET` (defaults to `tauri`).
+- `adapters/shared/` holds backend-agnostic logic used by both; `tauri/` and
+  `web/` must export the same surface — enforced by
+  `adapters/adapter-command-parity.test.ts`.
+- Adding a backend-touching feature means touching all layers: adapter
+  (shared + tauri + web), Tauri command (wire in `mod.rs` + `lib.rs`), Axum
+  endpoint, and the `crates/core` service both call into. Keep Tauri/Axum
+  handlers thin — business logic lives in `crates/core`.
+- DB migrations: `crates/storage-sqlite/migrations/` (Diesel).
+- Forms: `react-hook-form` + `zod` schemas in `apps/frontend/src/lib/schemas.ts`.
+  Theme tokens: `apps/frontend/src/globals.css`. Components from
+  `@wealthfolio/ui` (`packages/ui/src/components/`).
 
 ## Quick Commands
 
 - Dev desktop: `pnpm tauri dev`
-- Dev web: `pnpm run dev:web`
-- Tests: `pnpm test` | `cargo test`
-- Type check: `pnpm type-check`
-- Lint: `pnpm lint`
+- Dev web: `pnpm run dev:web` (Vite + Axum together)
+- TS tests: `pnpm test` (Vitest; watch mode in a TTY)
+- Single TS test: `pnpm --filter frontend exec vitest run <path-or-pattern>`
+- Rust tests: `cargo test` | single crate: `cargo test -p wealthfolio-core <name>`
+- E2E (Playwright vs web app, no mocks): `pnpm test:e2e` — but ALWAYS follow
+  `e2e/README.md` / the `run-e2e-tests` skill; manual runs need
+  `node scripts/prep-e2e.mjs` first for a fresh DB
+- Type check: `pnpm type-check` | Rust: `cargo check`
+- Lint: `pnpm lint` | All checks (format+lint+types): `pnpm check`
+
+## Conventions
+
+- TypeScript: strict mode; interfaces over types; no enums (use maps);
+  functional components, named exports; lowercase-with-dashes directories.
+- Rust: `Result`/`Option` with `?`, `thiserror` for domain errors;
+  `unsafe_code = "forbid"` workspace-wide; clippy warnings on.
+- If touching shared code, both desktop and web targets must compile.
 
 ## Network / Proxy (this machine)
 
